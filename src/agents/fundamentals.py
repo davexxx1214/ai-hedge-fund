@@ -9,203 +9,112 @@ from tools.api import get_financial_metrics
 
 ##### Fundamental Agent #####
 def fundamentals_agent(state: AgentState):
-    """Analyzes fundamental data and generates trading signals."""
+    """Fundamental analysis agent that evaluates company financials."""
     data = state["data"]
-    end_date = data["end_date"]
-
-    # Get the financial metrics
-    financial_metrics = get_financial_metrics(
+    
+    # 获取财务指标
+    financial_data = get_financial_metrics(
         ticker=data["ticker"],
-        report_period=end_date,
+        report_period=data["end_date"],
         period="ttm",
         limit=1,
     )
-
-    # Pull the most recent financial metrics
-    metrics = financial_metrics[0]
-
-    # Initialize signals list for different fundamental aspects
-    signals = []
-    reasoning = {}
-
-    # 1. Profitability Analysis
-    return_on_equity = metrics.get("return_on_equity")
-    net_margin = metrics.get("net_margin")
-    operating_margin = metrics.get("operating_margin")
-
-    thresholds = [
-        (return_on_equity, 0.15),  # Strong ROE above 15%
-        (net_margin, 0.20),  # Healthy profit margins
-        (operating_margin, 0.15),  # Strong operating efficiency
-    ]
-    profitability_score = sum(
-        metric is not None and metric > threshold for metric, threshold in thresholds
-    )
-
-    signals.append(
-        "bullish"
-        if profitability_score >= 2
-        else "bearish" if profitability_score == 0 else "neutral"
-    )
-    reasoning["profitability_signal"] = {
-        "signal": signals[0],
-        "details": (
-            f"ROE: {metrics['return_on_equity']:.2%}"
-            if metrics["return_on_equity"]
-            else "ROE: N/A"
-        )
-        + ", "
-        + (
-            f"Net Margin: {metrics['net_margin']:.2%}"
-            if metrics["net_margin"]
-            else "Net Margin: N/A"
-        )
-        + ", "
-        + (
-            f"Op Margin: {metrics['operating_margin']:.2%}"
-            if metrics["operating_margin"]
-            else "Op Margin: N/A"
-        ),
+    
+    # 从财务数据字典中获取最新的数据
+    # yfinance 返回的是字典格式，我们需要获取最新的数据
+    metrics = {
+        "revenue_growth": 0,  # 默认值
+        "profit_margin": 0,
+        "earnings_growth": 0,
+        "debt_to_equity": 0,
+        "current_ratio": 0,
     }
-
-    # 2. Growth Analysis
-    revenue_growth = metrics.get("revenue_growth")
-    earnings_growth = metrics.get("earnings_growth")
-    book_value_growth = metrics.get("book_value_growth")
-
-    thresholds = [
-        (revenue_growth, 0.10),  # 10% revenue growth
-        (earnings_growth, 0.10),  # 10% earnings growth
-        (book_value_growth, 0.10),  # 10% book value growth
-    ]
-    growth_score = sum(
-        metric is not None and metric > threshold for metric, threshold in thresholds
-    )
-
-    signals.append(
-        "bullish"
-        if growth_score >= 2
-        else "bearish" if growth_score == 0 else "neutral"
-    )
-    reasoning["growth_signal"] = {
-        "signal": signals[1],
-        "details": (
-            f"Revenue Growth: {metrics['revenue_growth']:.2%}"
-            if metrics["revenue_growth"]
-            else "Revenue Growth: N/A"
-        )
-        + ", "
-        + (
-            f"Earnings Growth: {metrics['earnings_growth']:.2%}"
-            if metrics["earnings_growth"]
-            else "Earnings Growth: N/A"
-        ),
+    
+    try:
+        # 尝试从财务数据中提取相关指标
+        if 'Total Revenue' in financial_data:
+            revenue = financial_data['Total Revenue']
+            metrics["revenue_growth"] = ((revenue.iloc[0] - revenue.iloc[1]) / revenue.iloc[1]) if len(revenue) > 1 else 0
+            
+        if 'Net Income' in financial_data and 'Total Revenue' in financial_data:
+            net_income = financial_data['Net Income'].iloc[0]
+            total_revenue = financial_data['Total Revenue'].iloc[0]
+            metrics["profit_margin"] = (net_income / total_revenue) if total_revenue != 0 else 0
+            
+        if 'Net Income' in financial_data:
+            net_income = financial_data['Net Income']
+            metrics["earnings_growth"] = ((net_income.iloc[0] - net_income.iloc[1]) / abs(net_income.iloc[1])) if len(net_income) > 1 and net_income.iloc[1] != 0 else 0
+            
+    except (KeyError, IndexError) as e:
+        print(f"Warning: Some financial metrics could not be calculated: {e}")
+    
+    # 计算基本面信号
+    signal = "neutral"
+    confidence = 50
+    
+    # 基于财务指标评估信号
+    positive_signals = 0
+    total_signals = 0
+    
+    if metrics["revenue_growth"] > 0.1:  # 10% 增长
+        positive_signals += 1
+    total_signals += 1
+    
+    if metrics["profit_margin"] > 0.15:  # 15% 利润率
+        positive_signals += 1
+    total_signals += 1
+    
+    if metrics["earnings_growth"] > 0.1:  # 10% 增长
+        positive_signals += 1
+    total_signals += 1
+    
+    # 计算信号和置信度
+    if total_signals > 0:
+        score = positive_signals / total_signals
+        if score > 0.7:
+            signal = "bullish"
+            confidence = int(score * 100)
+        elif score < 0.3:
+            signal = "bearish"
+            confidence = int((1 - score) * 100)
+        else:
+            signal = "neutral"
+            confidence = 50
+    
+    # 创建推理说明
+    reasoning = {
+        "fundamentals": {
+            "signal": signal,
+            "metrics": metrics,
+            "details": f"Revenue Growth: {metrics['revenue_growth']:.1%}, "
+                      f"Profit Margin: {metrics['profit_margin']:.1%}, "
+                      f"Earnings Growth: {metrics['earnings_growth']:.1%}"
+        }
     }
-
-    # 3. Financial Health
-    current_ratio = metrics.get("current_ratio")
-    debt_to_equity = metrics.get("debt_to_equity")
-    free_cash_flow_per_share = metrics.get("free_cash_flow_per_share")
-    earnings_per_share = metrics.get("earnings_per_share")
-
-    health_score = 0
-    if current_ratio and current_ratio > 1.5:  # Strong liquidity
-        health_score += 1
-    if debt_to_equity and debt_to_equity < 0.5:  # Conservative debt levels
-        health_score += 1
-    if (
-        free_cash_flow_per_share
-        and earnings_per_share
-        and free_cash_flow_per_share > earnings_per_share * 0.8
-    ):  # Strong FCF conversion
-        health_score += 1
-
-    signals.append(
-        "bullish"
-        if health_score >= 2
-        else "bearish" if health_score == 0 else "neutral"
-    )
-    reasoning["financial_health_signal"] = {
-        "signal": signals[2],
-        "details": (
-            f"Current Ratio: {metrics['current_ratio']:.2f}"
-            if metrics["current_ratio"]
-            else "Current Ratio: N/A"
-        )
-        + ", "
-        + (
-            f"D/E: {metrics['debt_to_equity']:.2f}"
-            if metrics["debt_to_equity"]
-            else "D/E: N/A"
-        ),
-    }
-
-    # 4. Price to X ratios
-    pe_ratio = metrics.get("price_to_earnings_ratio")
-    pb_ratio = metrics.get("price_to_book_ratio")
-    ps_ratio = metrics.get("price_to_sales_ratio")
-
-    thresholds = [
-        (pe_ratio, 25),  # Reasonable P/E ratio
-        (pb_ratio, 3),  # Reasonable P/B ratio
-        (ps_ratio, 5),  # Reasonable P/S ratio
-    ]
-    price_ratio_score = sum(
-        metric is not None and metric > threshold for metric, threshold in thresholds
-    )
-
-    signals.append(
-        "bullish"
-        if price_ratio_score >= 2
-        else "bearish" if price_ratio_score == 0 else "neutral"
-    )
-    reasoning["price_ratios_signal"] = {
-        "signal": signals[3],
-        "details": (f"P/E: {pe_ratio:.2f}" if pe_ratio else "P/E: N/A")
-        + ", "
-        + (f"P/B: {pb_ratio:.2f}" if pb_ratio else "P/B: N/A")
-        + ", "
-        + (f"P/S: {ps_ratio:.2f}" if ps_ratio else "P/S: N/A"),
-    }
-
-    # Determine overall signal
-    bullish_signals = signals.count("bullish")
-    bearish_signals = signals.count("bearish")
-
-    if bullish_signals > bearish_signals:
-        overall_signal = "bullish"
-    elif bearish_signals > bullish_signals:
-        overall_signal = "bearish"
-    else:
-        overall_signal = "neutral"
-
-    # Calculate confidence level
-    total_signals = len(signals)
-    confidence = round(max(bullish_signals, bearish_signals) / total_signals, 2) * 100
-
+    
     message_content = {
-        "signal": overall_signal,
+        "signal": signal,
         "confidence": confidence,
         "reasoning": reasoning,
     }
-
-    # Create the fundamental analysis message
+    
+    # 创建消息
     message = HumanMessage(
         content=json.dumps(message_content),
         name="fundamentals_agent",
     )
-
-    # Print the reasoning if the flag is set
+    
+    # 显示推理过程（如果需要）
     if state["metadata"]["show_reasoning"]:
         show_agent_reasoning(message_content, "Fundamental Analysis Agent")
-
-    # Add the signal to the analyst_signals list
+    
+    # 添加信号到分析结果中
     state["data"]["analyst_signals"]["fundamentals_agent"] = {
-        "signal": overall_signal,
+        "signal": signal,
         "confidence": confidence,
         "reasoning": reasoning,
     }
-
+    
     return {
         "messages": [message],
         "data": data,

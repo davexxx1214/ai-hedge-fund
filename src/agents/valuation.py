@@ -1,130 +1,121 @@
 from langchain_core.messages import HumanMessage
 from graph.state import AgentState, show_agent_reasoning
 import json
-
-from tools.api import get_financial_metrics, get_market_cap, search_line_items
+import yfinance as yf
+from tools.api import get_financial_metrics, get_market_cap
 
 
 def valuation_agent(state: AgentState):
     """Performs detailed valuation analysis using multiple methodologies."""
     data = state["data"]
-    end_date = data["end_date"]
-
-    # Fetch the financial metrics
-    financial_metrics = get_financial_metrics(
-        ticker=data["ticker"],
-        report_period=end_date,
-        period="ttm",
-        limit=1,
-    )
-
-    # Pull the most recent financial metrics
-    metrics = financial_metrics[0]
-
-    # Fetch the specific line_items that we need for valuation purposes
-    financial_line_items = search_line_items(
-        ticker=data["ticker"],
-        line_items=[
-            "free_cash_flow",
-            "net_income",
-            "depreciation_and_amortization",
-            "capital_expenditure",
-            "working_capital",
-        ],
-        period="ttm",
-        limit=2,
-    )
-
-    # Pull the current and previous financial line items
-    current_financial_line_item = financial_line_items[0]
-    previous_financial_line_item = financial_line_items[1]
-
-    # Calculate working capital change
-    working_capital_change = (
-        current_financial_line_item.get("working_capital") or 0
-    ) - (previous_financial_line_item.get("working_capital") or 0)
-
-    # Owner Earnings Valuation (Buffett Method)
-    owner_earnings_value = calculate_owner_earnings_value(
-        net_income=current_financial_line_item.get("net_income"),
-        depreciation=current_financial_line_item.get("depreciation_and_amortization"),
-        capex=current_financial_line_item.get("capital_expenditure"),
-        working_capital_change=working_capital_change,
-        growth_rate=metrics["earnings_growth"],
-        required_return=0.15,
-        margin_of_safety=0.25,
-    )
-
-    # DCF Valuation
-    dcf_value = calculate_intrinsic_value(
-        free_cash_flow=current_financial_line_item.get("free_cash_flow"),
-        growth_rate=metrics["earnings_growth"],
-        discount_rate=0.10,
-        terminal_growth_rate=0.03,
-        num_years=5,
-    )
-
-    # Get the market cap
-    market_cap = get_market_cap(ticker=data["ticker"])
-
-    # Calculate combined valuation gap (average of both methods)
-    dcf_gap = (dcf_value - market_cap) / market_cap
-    owner_earnings_gap = (owner_earnings_value - market_cap) / market_cap
-    valuation_gap = (dcf_gap + owner_earnings_gap) / 2
-
-    if valuation_gap > 0.15:  # More than 15% undervalued
-        signal = "bullish"
-    elif valuation_gap < -0.15:  # More than 15% overvalued
-        signal = "bearish"
-    else:
+    
+    try:
+        # 获取财务数据
+        financial_metrics = get_financial_metrics(
+            ticker=data["ticker"],
+            report_period=data["end_date"],
+        )
+        
+        # 设置默认的财务指标
+        metrics = {
+            "revenue_growth": 0,
+            "profit_margin": 0,
+            "net_income": 0,
+            "total_assets": 0,
+            "total_liabilities": 0,
+            "working_capital_change": 0,
+        }
+        
+        # 安全地获取财务数据
+        if financial_metrics is not None:
+            if 'Total Revenue' in financial_metrics and len(financial_metrics['Total Revenue']) >= 2:
+                revenue = financial_metrics['Total Revenue']
+                metrics["revenue_growth"] = ((revenue.iloc[0] - revenue.iloc[1]) / revenue.iloc[1]) if revenue.iloc[1] != 0 else 0
+            
+            if 'Net Income' in financial_metrics and len(financial_metrics['Net Income']) > 0:
+                metrics["net_income"] = financial_metrics['Net Income'].iloc[0]
+            
+            if 'Total Assets' in financial_metrics and len(financial_metrics['Total Assets']) > 0:
+                metrics["total_assets"] = financial_metrics['Total Assets'].iloc[0]
+            
+            if 'Total Liabilities' in financial_metrics and len(financial_metrics['Total Liabilities']) > 0:
+                metrics["total_liabilities"] = financial_metrics['Total Liabilities'].iloc[0]
+        
+        # 计算估值信号
         signal = "neutral"
-
-    # Create the reasoning
-    reasoning = {}
-    reasoning["dcf_analysis"] = {
-        "signal": (
-            "bullish" if dcf_gap > 0.15 else "bearish" if dcf_gap < -0.15 else "neutral"
-        ),
-        "details": f"Intrinsic Value: ${dcf_value:,.2f}, Market Cap: ${market_cap:,.2f}, Gap: {dcf_gap:.1%}",
-    }
-
-    reasoning["owner_earnings_analysis"] = {
-        "signal": (
-            "bullish"
-            if owner_earnings_gap > 0.15
-            else "bearish" if owner_earnings_gap < -0.15 else "neutral"
-        ),
-        "details": f"Owner Earnings Value: ${owner_earnings_value:,.2f}, Market Cap: ${market_cap:,.2f}, Gap: {owner_earnings_gap:.1%}",
-    }
-
-    confidence = round(abs(valuation_gap), 2) * 100
-    message_content = {
-        "signal": signal,
-        "confidence": confidence,
-        "reasoning": reasoning,
-    }
-
-    message = HumanMessage(
-        content=json.dumps(message_content),
-        name="valuation_agent",
-    )
-
-    # Print the reasoning if the flag is set
-    if state["metadata"]["show_reasoning"]:
-        show_agent_reasoning(message_content, "Valuation Analysis Agent")
-
-    # Add the signal to the analyst_signals list
-    state["data"]["analyst_signals"]["valuation_agent"] = {
-        "signal": signal,
-        "confidence": confidence,
-        "reasoning": reasoning,
-    }
-
-    return {
-        "messages": [message],
-        "data": data,
-    }
-
+        confidence = 50
+        
+        # 基于财务指标评估信号
+        score = 0
+        valid_metrics = 0
+        
+        if metrics["revenue_growth"] > 0.1:  # 10% 收入增长
+            score += 1
+            valid_metrics += 1
+        
+        if metrics["profit_margin"] > 0.15:  # 15% 利润率
+            score += 1
+            valid_metrics += 1
+        
+        if metrics["total_assets"] > metrics["total_liabilities"]:  # 健康的资产负债率
+            score += 1
+            valid_metrics += 1
+        
+        if valid_metrics > 0:
+            final_score = score / valid_metrics
+            if final_score > 0.7:
+                signal = "bullish"
+                confidence = int(final_score * 100)
+            elif final_score < 0.3:
+                signal = "bearish"
+                confidence = int((1 - final_score) * 100)
+        
+        # 创建估值结果
+        valuation_result = {
+            "signal": signal,
+            "confidence": confidence,
+            "metrics": metrics
+        }
+        
+        message = HumanMessage(
+            content=json.dumps(valuation_result),
+            name="valuation_agent",
+        )
+        
+        if state["metadata"]["show_reasoning"]:
+            show_agent_reasoning(valuation_result, "Valuation Analysis")
+        
+        state["data"]["analyst_signals"]["valuation_agent"] = {
+            "signal": signal,
+            "confidence": confidence,
+            "reasoning": metrics,
+        }
+        
+        return {
+            "messages": [message],
+            "data": data,
+        }
+        
+    except Exception as e:
+        print(f"Warning in valuation agent: {e}")
+        # 返回中性信号
+        default_result = {
+            "signal": "neutral",
+            "confidence": 50,
+            "reasoning": "Error processing financial data"
+        }
+        
+        message = HumanMessage(
+            content=json.dumps(default_result),
+            name="valuation_agent",
+        )
+        
+        state["data"]["analyst_signals"]["valuation_agent"] = default_result
+        
+        return {
+            "messages": [message],
+            "data": data,
+        }
 
 def calculate_owner_earnings_value(
     net_income: float,
