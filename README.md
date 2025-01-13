@@ -60,8 +60,12 @@ poetry install
 cp .env.example .env
 
 export OPENAI_API_KEY='your-api-key-here' # Get a key from https://platform.openai.com/
-export FINANCIAL_DATASETS_API_KEY='your-api-key-here' # Get a key from https://financialdatasets.ai/
+export ALPHAVANTAGE_API_KEY='your-api-key-here' # Get a key from https://www.alphavantage.co/support/#api-key
 ```
+
+Note: You'll need to obtain API keys from:
+- OpenAI: For AI-powered analysis (https://platform.openai.com/)
+- Alpha Vantage: For financial data (https://www.alphavantage.co/)
 
 ## Usage
 
