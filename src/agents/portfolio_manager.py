@@ -1,21 +1,9 @@
-import os
-from pathlib import Path
 from langchain_core.messages import HumanMessage
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai.chat_models import ChatOpenAI
+
 from graph.state import AgentState, show_agent_reasoning
-from dotenv import load_dotenv
 
-
-# 获取项目根目录路径
-ROOT_DIR = Path(__file__).resolve().parent.parent.parent
-
-# 加载 .env 文件，使用绝对路径
-load_dotenv(
-    dotenv_path=ROOT_DIR / ".env",
-    override=True,
-    verbose=True
-)
 
 ##### Portfolio Management Agent #####
 def portfolio_management_agent(state: AgentState):
@@ -81,20 +69,8 @@ def portfolio_management_agent(state: AgentState):
             "portfolio_stock": portfolio["stock"],
         }
     )
-    # 从环境变量获取配置
-    openai_api_key = os.getenv("OPENAI_API_KEY")
-    openai_api_base = os.getenv("OPENAI_API_BASE")
-    
-    # 创建 LLM 配置
-    llm_kwargs = {
-        "model_name": "gpt-4o",
-        "temperature": 0.7,
-        "base_url": openai_api_base,
-        "openai_api_key": openai_api_key,
-    }
-
-    # 使用更新后的配置初始化LLM
-    llm = ChatOpenAI(**llm_kwargs)
+    # Invoke the LLM
+    llm = ChatOpenAI(model="gpt-4o")
     result = llm.invoke(prompt)
 
     # Create the portfolio management message

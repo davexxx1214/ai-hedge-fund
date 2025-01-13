@@ -1,55 +1,152 @@
-import yfinance as yf
-import pandas as pd
+import os
 from typing import Dict, Any, List
+import pandas as pd
+import requests
+
+import requests
 
 def get_financial_metrics(
     ticker: str,
     report_period: str,
     period: str = 'ttm',
     limit: int = 1
-) -> Dict[str, Any]:
-    """获取财务指标"""
-    yf_ticker = yf.Ticker(ticker)
-    # 获取财务报表数据
-    if period == 'ttm':
-        financials = yf_ticker.financials
-    else:
-        financials = yf_ticker.quarterly_financials
-    
-    return financials.to_dict()
+) -> List[Dict[str, Any]]:
+    """Fetch financial metrics from the API."""
+    headers = {"X-API-KEY": os.environ.get("FINANCIAL_DATASETS_API_KEY")}
+    url = (
+        f"https://api.financialdatasets.ai/financial-metrics/"
+        f"?ticker={ticker}"
+        f"&report_period_lte={report_period}"
+        f"&limit={limit}"
+        f"&period={period}"
+    )
+    response = requests.get(url, headers=headers)
+    if response.status_code != 200:
+        raise Exception(
+            f"Error fetching data: {response.status_code} - {response.text}"
+        )
+    data = response.json()
+    financial_metrics = data.get("financial_metrics")
+    if not financial_metrics:
+        raise ValueError("No financial metrics returned")
+    return financial_metrics
 
-def get_prices(
+def search_line_items(
     ticker: str,
-    start_date: str,
-    end_date: str
-) -> pd.DataFrame:
-    """获取股票价格数据"""
-    return yf.download(ticker, start=start_date, end=end_date)
+    line_items: List[str],
+    period: str = 'ttm',
+    limit: int = 1
+) -> List[Dict[str, Any]]:
+    """Fetch cash flow statements from the API."""
+    headers = {"X-API-KEY": os.environ.get("FINANCIAL_DATASETS_API_KEY")}
+    url = "https://api.financialdatasets.ai/financials/search/line-items"
 
-def get_market_cap(
-    ticker: str,
-) -> float:
-    """获取市值"""
-    yf_ticker = yf.Ticker(ticker)
-    info = yf_ticker.info
-    return info.get('marketCap')
+    body = {
+        "tickers": [ticker],
+        "line_items": line_items,
+        "period": period,
+        "limit": limit
+    }
+    response = requests.post(url, headers=headers, json=body)
+    if response.status_code != 200:
+        raise Exception(
+            f"Error fetching data: {response.status_code} - {response.text}"
+        )
+    data = response.json()
+    search_results = data.get("search_results")
+    if not search_results:
+        raise ValueError("No search results returned")
+    return search_results
 
 def get_insider_trades(
     ticker: str,
     end_date: str,
     limit: int = 5,
 ) -> List[Dict[str, Any]]:
-    """获取内部交易数据"""
-    yf_ticker = yf.Ticker(ticker)
-    # yfinance 目前不直接提供内部交易数据
-    # 如果需要这个功能，建议使用其他数据源
-    raise NotImplementedError("yfinance does not provide insider trades data")
+    """
+    Fetch insider trades for a given ticker and date range.
+    """
+    headers = {"X-API-KEY": os.environ.get("FINANCIAL_DATASETS_API_KEY")}
+    url = (
+        f"https://api.financialdatasets.ai/insider-trades/"
+        f"?ticker={ticker}"
+        f"&filing_date_lte={end_date}"
+        f"&limit={limit}"
+    )
+    response = requests.get(url, headers=headers)
+    if response.status_code != 200:
+        raise Exception(
+            f"Error fetching data: {response.status_code} - {response.text}"
+        )
+    data = response.json()
+    insider_trades = data.get("insider_trades")
+    if not insider_trades:
+        raise ValueError("No insider trades returned")
+    return insider_trades
 
-# prices_to_df 函数可以删除，因为 yfinance 直接返回 DataFrame
+def get_market_cap(
+    ticker: str,
+) -> List[Dict[str, Any]]:
+    """Fetch market cap from the API."""
+    headers = {"X-API-KEY": os.environ.get("FINANCIAL_DATASETS_API_KEY")}
+    url = (
+        f'https://api.financialdatasets.ai/company/facts'
+        f'?ticker={ticker}'
+    )
+
+    response = requests.get(url, headers=headers)
+    if response.status_code != 200:
+        raise Exception(
+            f"Error fetching data: {response.status_code} - {response.text}"
+        )
+    data = response.json()
+    company_facts = data.get('company_facts')
+    if not company_facts:
+        raise ValueError("No company facts returned")
+    return company_facts.get('market_cap')
+
+def get_prices(
+    ticker: str,
+    start_date: str,
+    end_date: str
+) -> List[Dict[str, Any]]:
+    """Fetch price data from the API."""
+    headers = {"X-API-KEY": os.environ.get("FINANCIAL_DATASETS_API_KEY")}
+    url = (
+        f"https://api.financialdatasets.ai/prices/"
+        f"?ticker={ticker}"
+        f"&interval=day"
+        f"&interval_multiplier=1"
+        f"&start_date={start_date}"
+        f"&end_date={end_date}"
+    )
+    response = requests.get(url, headers=headers)
+    if response.status_code != 200:
+        raise Exception(
+            f"Error fetching data: {response.status_code} - {response.text}"
+        )
+    data = response.json()
+    prices = data.get("prices")
+    if not prices:
+        raise ValueError("No price data returned")
+    return prices
+
+def prices_to_df(prices: List[Dict[str, Any]]) -> pd.DataFrame:
+    """Convert prices to a DataFrame."""
+    df = pd.DataFrame(prices)
+    df["Date"] = pd.to_datetime(df["time"])
+    df.set_index("Date", inplace=True)
+    numeric_cols = ["open", "close", "high", "low", "volume"]
+    for col in numeric_cols:
+        df[col] = pd.to_numeric(df[col], errors="coerce")
+    df.sort_index(inplace=True)
+    return df
+
+# Update the get_price_data function to use the new functions
 def get_price_data(
     ticker: str,
     start_date: str,
     end_date: str
 ) -> pd.DataFrame:
-    """直接获取价格数据"""
-    return get_prices(ticker, start_date, end_date)
+    prices = get_prices(ticker, start_date, end_date)
+    return prices_to_df(prices)

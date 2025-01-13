@@ -140,7 +140,7 @@ if __name__ == "__main__":
         "stock": 0,  # No initial stock position
     }
 
-    # 运行 hedge fund
+    # Run the hedge fund
     result = run_hedge_fund(
         ticker=args.ticker,
         start_date=start_date,
@@ -148,8 +148,5 @@ if __name__ == "__main__":
         portfolio=portfolio,
         show_reasoning=args.show_reasoning,
     )
-    print("\nAnalysis Date Range:")
-    print(f"Start Date: {start_date}")
-    print(f"End Date: {end_date}")
     print("\nFinal Result:")
     print(result)

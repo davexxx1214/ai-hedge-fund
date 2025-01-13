@@ -10,45 +10,63 @@ from tools.api import get_insider_trades
 
 
 def sentiment_agent(state: AgentState):
-    """Market sentiment analysis agent."""
+    """Analyzes market sentiment and generates trading signals."""
     data = state["data"]
-    
-    # 移除内部交易相关的代码
-    # insider_trades = get_insider_trades(...)
-    
-    # 创建情绪分析结果
-    signal = "neutral"  # 默认信号
-    confidence = 50  # 默认置信度
-    
-    reasoning = {
-        "market_sentiment": {
-            "signal": signal,
-            "details": "Market sentiment analysis is currently limited as insider trading data is not available"
-        }
-    }
-    
+    end_date = data["end_date"]
+    # Get the insider trades
+    insider_trades = get_insider_trades(
+        ticker=data["ticker"],
+        end_date=end_date,
+        limit=5,
+    )
+
+    # Get the signals from the insider trades
+    transaction_shares = pd.Series(
+        [t["transaction_shares"] for t in insider_trades]
+    ).dropna()
+    bearish_condition = transaction_shares < 0
+    signals = np.where(bearish_condition, "bearish", "bullish").tolist()
+
+    # Determine overall signal
+    bullish_signals = signals.count("bullish")
+    bearish_signals = signals.count("bearish")
+    if bullish_signals > bearish_signals:
+        overall_signal = "bullish"
+    elif bearish_signals > bullish_signals:
+        overall_signal = "bearish"
+    else:
+        overall_signal = "neutral"
+
+    # Calculate confidence level based on the proportion of indicators agreeing
+    total_signals = len(signals)
+    confidence = round(max(bullish_signals, bearish_signals) / total_signals, 2) * 100
+    reasoning = (
+        f"Bullish signals: {bullish_signals}, Bearish signals: {bearish_signals}"
+    )
+
     message_content = {
-        "signal": signal,
+        "signal": overall_signal,
         "confidence": confidence,
         "reasoning": reasoning,
     }
-    
+
+    # Print the reasoning if the flag is set
+    if state["metadata"]["show_reasoning"]:
+        show_agent_reasoning(message_content, "Sentiment Analysis Agent")
+
+    # Create the sentiment message
     message = HumanMessage(
         content=json.dumps(message_content),
         name="sentiment_agent",
     )
-    
-    # Print the reasoning if the flag is set
-    if state["metadata"]["show_reasoning"]:
-        show_agent_reasoning(message_content, "Sentiment Analysis Agent")
-    
+
     # Add the signal to the analyst_signals list
     state["data"]["analyst_signals"]["sentiment_agent"] = {
-        "signal": signal,
+        "signal": overall_signal,
         "confidence": confidence,
         "reasoning": reasoning,
     }
-    
+
     return {
         "messages": [message],
         "data": data,
