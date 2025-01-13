@@ -4,127 +4,87 @@ import json
 
 from tools.api import get_financial_metrics, get_market_cap, search_line_items
 
-
 def valuation_agent(state: AgentState):
-    """Performs detailed valuation analysis using multiple methodologies."""
+    """进行估值分析并生成交易信号"""
     data = state["data"]
-    end_date = data["end_date"]
-
-    # Fetch the financial metrics
-    financial_metrics = get_financial_metrics(
+    
+    # 获取财务指标
+    metrics = get_financial_metrics(
         ticker=data["ticker"],
-        report_period=end_date,
-        period="ttm",
-        limit=1,
+        period="quarterly",
+        end_date=data["end_date"]
     )
-
-    # Pull the most recent financial metrics
-    metrics = financial_metrics[0]
-
-    # Fetch the specific line_items that we need for valuation purposes
-    financial_line_items = search_line_items(
-        ticker=data["ticker"],
-        line_items=[
-            "free_cash_flow",
-            "net_income",
-            "depreciation_and_amortization",
-            "capital_expenditure",
-            "working_capital",
-        ],
-        period="ttm",
-        limit=2,
-    )
-
-    # Pull the current and previous financial line items
-    current_financial_line_item = financial_line_items[0]
-    previous_financial_line_item = financial_line_items[1]
-
-    # Calculate working capital change
-    working_capital_change = (
-        current_financial_line_item.get("working_capital") or 0
-    ) - (previous_financial_line_item.get("working_capital") or 0)
-
-    # Owner Earnings Valuation (Buffett Method)
-    owner_earnings_value = calculate_owner_earnings_value(
-        net_income=current_financial_line_item.get("net_income"),
-        depreciation=current_financial_line_item.get("depreciation_and_amortization"),
-        capex=current_financial_line_item.get("capital_expenditure"),
-        working_capital_change=working_capital_change,
-        growth_rate=metrics["earnings_growth"],
-        required_return=0.15,
-        margin_of_safety=0.25,
-    )
-
-    # DCF Valuation
-    dcf_value = calculate_intrinsic_value(
-        free_cash_flow=current_financial_line_item.get("free_cash_flow"),
-        growth_rate=metrics["earnings_growth"],
-        discount_rate=0.10,
-        terminal_growth_rate=0.03,
-        num_years=5,
-    )
-
-    # Get the market cap
-    market_cap = get_market_cap(ticker=data["ticker"])
-
-    # Calculate combined valuation gap (average of both methods)
-    dcf_gap = (dcf_value - market_cap) / market_cap
-    owner_earnings_gap = (owner_earnings_value - market_cap) / market_cap
-    valuation_gap = (dcf_gap + owner_earnings_gap) / 2
-
-    if valuation_gap > 0.15:  # More than 15% undervalued
-        signal = "bullish"
-    elif valuation_gap < -0.15:  # More than 15% overvalued
-        signal = "bearish"
-    else:
-        signal = "neutral"
-
-    # Create the reasoning
-    reasoning = {}
-    reasoning["dcf_analysis"] = {
-        "signal": (
-            "bullish" if dcf_gap > 0.15 else "bearish" if dcf_gap < -0.15 else "neutral"
-        ),
-        "details": f"Intrinsic Value: ${dcf_value:,.2f}, Market Cap: ${market_cap:,.2f}, Gap: {dcf_gap:.1%}",
-    }
-
-    reasoning["owner_earnings_analysis"] = {
-        "signal": (
-            "bullish"
-            if owner_earnings_gap > 0.15
-            else "bearish" if owner_earnings_gap < -0.15 else "neutral"
-        ),
-        "details": f"Owner Earnings Value: ${owner_earnings_value:,.2f}, Market Cap: ${market_cap:,.2f}, Gap: {owner_earnings_gap:.1%}",
-    }
-
-    confidence = round(abs(valuation_gap), 2) * 100
+    
+    # 计算不同估值方法的结果
+    market_cap = metrics["MarketCap"]
+    net_income = metrics["NetIncome"]
+    pe_ratio = metrics["PE"]
+    
+    # 初始化分析结果
+    signal = "neutral"
+    confidence = 50
+    reasons = {}
+    
+    # 基于PE的估值分析
+    if pe_ratio > 0:
+        industry_avg_pe = 20  # 假设行业平均PE为20
+        if pe_ratio < industry_avg_pe * 0.7:
+            reasons["pe_valuation"] = {"signal": "bullish", "detail": f"PE ({pe_ratio:.2f}) 显著低于行业平均"}
+        elif pe_ratio > industry_avg_pe * 1.3:
+            reasons["pe_valuation"] = {"signal": "bearish", "detail": f"PE ({pe_ratio:.2f}) 显著高于行业平均"}
+        else:
+            reasons["pe_valuation"] = {"signal": "neutral", "detail": f"PE ({pe_ratio:.2f}) 接近行业平均"}
+    
+    # 基于市值和净收入的分析
+    if net_income > 0:
+        price_to_earnings = market_cap / net_income
+        if price_to_earnings < 15:
+            reasons["price_earnings"] = {"signal": "bullish", "detail": f"市值收益比 ({price_to_earnings:.2f}) 较低"}
+        elif price_to_earnings > 25:
+            reasons["price_earnings"] = {"signal": "bearish", "detail": f"市值收益比 ({price_to_earnings:.2f}) 较高"}
+        else:
+            reasons["price_earnings"] = {"signal": "neutral", "detail": f"市值收益比 ({price_to_earnings:.2f}) 适中"}
+    
+    # 统计各种信号的数量
+    signal_counts = {'bullish': 0, 'bearish': 0, 'neutral': 0}
+    for analysis in reasons.values():
+        signal_counts[analysis['signal']] += 1
+    
+    # 确定最终信号
+    max_count = max(signal_counts.values())
+    if max_count == signal_counts['bullish'] and signal_counts['bullish'] > signal_counts['bearish']:
+        signal = 'bullish'
+    elif max_count == signal_counts['bearish'] and signal_counts['bearish'] > signal_counts['bullish']:
+        signal = 'bearish'
+    
+    # 计算置信度
+    total_signals = len(reasons)
+    if total_signals > 0:
+        confidence = (max_count / total_signals) * 100
+    
+    # 构建消息内容
     message_content = {
         "signal": signal,
-        "confidence": confidence,
-        "reasoning": reasoning,
+        "confidence": round(confidence, 2),
+        "reasoning": reasons
     }
-
+    
     message = HumanMessage(
         content=json.dumps(message_content),
-        name="valuation_agent",
+        name="valuation_agent"
     )
-
-    # Print the reasoning if the flag is set
+    
+    # 显示推理过程（如果需要）
     if state["metadata"]["show_reasoning"]:
         show_agent_reasoning(message_content, "Valuation Analysis Agent")
-
-    # Add the signal to the analyst_signals list
-    state["data"]["analyst_signals"]["valuation_agent"] = {
-        "signal": signal,
-        "confidence": confidence,
-        "reasoning": reasoning,
-    }
-
+    
+    # 将分析结果添加到状态中
+    state["data"]["analyst_signals"]["valuation_agent"] = message_content
+    
     return {
         "messages": [message],
-        "data": data,
+        "data": data
     }
-
 
 def calculate_owner_earnings_value(
     net_income: float,
