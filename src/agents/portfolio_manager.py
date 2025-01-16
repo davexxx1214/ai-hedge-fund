@@ -1,3 +1,9 @@
+import os
+from dotenv import load_dotenv
+
+# 在文件顶部加载环境变量
+load_dotenv(os.path.join(os.path.dirname(__file__), '..', '.env'))
+
 import json
 from langchain_core.messages import HumanMessage
 from langchain_core.prompts import ChatPromptTemplate
@@ -156,7 +162,16 @@ def portfolio_management_agent(state: AgentState):
 
 def make_decision(prompt, tickers):
     """Attempts to get a decision from the LLM with retry logic"""
-    llm = ChatOpenAI(model="gpt-4o").with_structured_output(
+    # 获取环境变量
+    openai_api_key = os.getenv('OPENAI_API_KEY')
+    openai_api_base = os.getenv('OPENAI_API_BASE')
+
+    # 初始化 ChatOpenAI 时加入 api_base 参数
+    llm = ChatOpenAI(
+        model="gpt-4o",
+        openai_api_key=openai_api_key,
+        openai_api_base=openai_api_base
+    ).with_structured_output(
         PortfolioManagerOutput,
         method="function_calling",
     )
