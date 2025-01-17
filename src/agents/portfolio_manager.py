@@ -71,6 +71,7 @@ def portfolio_management_agent(state: AgentState):
                 "system",
                 """You are a portfolio manager making final trading decisions.
                 Your job is to make trading decisions based on the team's analysis for multiple tickers.
+                You must think in English and always reply in simplied Chinese.
 
                 Trading Rules:
                 - Only buy if you have available cash
