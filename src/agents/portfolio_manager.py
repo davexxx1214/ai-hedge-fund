@@ -96,6 +96,7 @@ def portfolio_management_agent(state: AgentState):
             (
                 "human",
                 """Based on the team's analysis below, make your trading decisions.
+                You must think in English and always reply in simplied Chinese.
 
                 For each ticker, here are the signals:
                 {signals_by_ticker}
