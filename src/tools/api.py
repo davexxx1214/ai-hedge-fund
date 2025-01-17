@@ -102,11 +102,53 @@ def get_financial_metrics(ticker: str, end_date: str = None, period: str = "ttm"
         })()]
     
 def get_insider_trades(ticker: str, end_date: str = None, limit: int = 1000):
-    """
-    注意：Alpha Vantage 目前不直接提供内部交易数据
-    这里返回一个空列表，你可能需要寻找其他数据源来补充这个功能
-    """
-    return []
+    """获取内部交易数据"""
+    try:
+        # 构建 API URL
+        url = f'https://www.alphavantage.co/query?function=INSIDER_TRANSACTIONS&symbol={ticker}&apikey={ALPHA_VANTAGE_API_KEY}'
+        
+        # 发送请求
+        response = requests.get(url)
+        data = response.json()
+        
+        # 检查是否有错误信息
+        if "Error Message" in data:
+            print(f"Error fetching insider trades for {ticker}: {data['Error Message']}")
+            return []
+            
+        # 获取交易数据
+        trades = data.get("transactions", [])
+        
+        # 转换数据格式
+        formatted_trades = []
+        for trade in trades[:limit]:  # 限制返回数量
+            try:
+                trade_date = trade.get("transactionDate", "")
+                # 如果提供了 end_date，则只返回该日期之前的交易
+                if end_date and trade_date > end_date:
+                    continue
+                    
+                formatted_trade = type('InsiderTrade', (), {
+                    "date": trade_date,
+                    "insider_name": trade.get("insiderName", ""),
+                    "insider_title": trade.get("insiderTitle", ""),
+                    "trade_type": trade.get("transactionType", ""),
+                    "price": float(trade.get("price", 0)),
+                    "qty": float(trade.get("numberOfShares", 0)),
+                    "shares_owned": float(trade.get("sharesOwned", 0)),
+                })()
+                
+                formatted_trades.append(formatted_trade)
+                
+            except Exception as e:
+                print(f"Error processing trade: {str(e)}")
+                continue
+        
+        return formatted_trades
+        
+    except Exception as e:
+        print(f"Error fetching insider trades for {ticker}: {str(e)}")
+        return []
 
 def get_market_cap(ticker: str, end_date: str = None):
     """获取市值数据"""
