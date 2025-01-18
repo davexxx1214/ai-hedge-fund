@@ -5,6 +5,7 @@ import os
 from datetime import datetime, timedelta
 import time
 import requests
+import json
 
 # 获取 API key
 ALPHA_VANTAGE_API_KEY = os.getenv("ALPHAVANTAGE_API_KEY")
@@ -105,52 +106,54 @@ def get_financial_metrics(ticker: str, end_date: str = None, period: str = "ttm"
 def get_insider_trades(ticker: str, end_date: str = None, limit: int = 1000):
     """获取内部交易数据"""
     try:
-        # 构建 API URL
         url = f'https://www.alphavantage.co/query?function=INSIDER_TRANSACTIONS&symbol={ticker}&apikey={ALPHA_VANTAGE_API_KEY}'
-        
-        # 发送请求
         response = requests.get(url)
         data = response.json()
         
-        # 检查是否有错误信息
-        if "Error Message" in data:
-            print(f"Error fetching insider trades for {ticker}: {data['Error Message']}")
+        # 检查数据结构
+        if not data or 'data' not in data:
+            print(f"No data available for {ticker}")
             return []
-            
-        # 获取交易数据
-        trades = data.get("transactions", [])
         
-        # 转换数据格式
+        # 获取交易列表
+        trades = data['data']
+        
         formatted_trades = []
-        for trade in trades[:limit]:  # 限制返回数量
+        for trade in trades:
             try:
-                trade_date = trade.get("transactionDate", "")
-                # 如果提供了 end_date，则只返回该日期之前的交易
-                if end_date and trade_date > end_date:
-                    continue
-                    
-                formatted_trade = type('InsiderTrade', (), {
-                    "date": trade_date,
-                    "insider_name": trade.get("insiderName", ""),
-                    "insider_title": trade.get("insiderTitle", ""),
-                    "trade_type": trade.get("transactionType", ""),
-                    "price": float(trade.get("price", 0)),
-                    "qty": float(trade.get("numberOfShares", 0)),
-                    "shares_owned": float(trade.get("sharesOwned", 0)),
-                })()
+                # 处理交易类型
+                is_sale = trade.get('acquisition_or_disposal', '') == 'D'
                 
+                # 处理股价，确保处理空字符串的情况
+                share_price = trade.get('share_price', '0')
+                share_price = float(share_price) if share_price and share_price != '' else 0.0
+                
+                # 处理股数
+                shares = float(trade.get('shares', 0) or 0)
+                
+                formatted_trade = type('InsiderTrade', (), {
+                    'date': trade.get('transaction_date', ''),
+                    'insider_name': trade.get('executive', ''),
+                    'insider_title': trade.get('executive_title', ''),
+                    'transaction_type': 'sell' if is_sale else 'buy',
+                    'price': share_price,
+                    'transaction_shares': shares,  # 改为 transaction_shares 以匹配 sentiment_agent
+                    'value': share_price * shares,
+                    'shares_owned': 0  # API 没有提供这个信息
+                })
                 formatted_trades.append(formatted_trade)
                 
             except Exception as e:
                 print(f"Error processing trade: {str(e)}")
                 continue
-        
+                
+        print(f"\nDebug - Formatted {len(formatted_trades)} trades successfully")
         return formatted_trades
         
     except Exception as e:
         print(f"Error fetching insider trades for {ticker}: {str(e)}")
         return []
-
+    
 def get_market_cap(ticker: str, end_date: str = None):
     """获取市值数据"""
     try:
