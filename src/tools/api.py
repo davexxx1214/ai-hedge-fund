@@ -155,7 +155,10 @@ def get_market_cap(ticker: str, end_date: str = None):
     """获取市值数据"""
     try:
         overview, _ = fd.get_company_overview(symbol=ticker)
-        return float(overview.get("MarketCapitalization", 0))
+        market_cap = overview.get("MarketCapitalization")
+        if market_cap is not None:
+            return float(market_cap.iloc[0])  # 使用 iloc[0] 获取 Series 的第一个元素
+        return 0
     except Exception as e:
         print(f"Error fetching market cap for {ticker}: {str(e)}")
         return 0

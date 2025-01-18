@@ -167,10 +167,12 @@ def make_decision(prompt, tickers):
     # 获取环境变量
     openai_api_key = os.getenv('OPENAI_API_KEY')
     openai_api_base = os.getenv('OPENAI_API_BASE')
-
+    model = os.getenv('MODEL', 'gpt-4o') 
+    # 打印当前使用的模型
+    print(f"当前使用的模型是: {model}")
     # 初始化 ChatOpenAI 时加入 api_base 参数
     llm = ChatOpenAI(
-        model="gpt-4o",
+        model=model,
         openai_api_key=openai_api_key,
         openai_api_base=openai_api_base
     ).with_structured_output(
