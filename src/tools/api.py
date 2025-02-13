@@ -1,282 +1,263 @@
 import os
 import pandas as pd
 import requests
+from datetime import datetime, timedelta
 
-from data.cache import get_cache
-from data.models import (
-    CompanyNews,
-    CompanyNewsResponse,
-    FinancialMetrics,
-    FinancialMetricsResponse,
-    Price,
-    PriceResponse,
-    LineItem,
-    LineItemResponse,
-    InsiderTrade,
-    InsiderTradeResponse,
-)
+from alpha_vantage.timeseries import TimeSeries
+from alpha_vantage.fundamentaldata import FundamentalData
 
-# Global cache instance
-_cache = get_cache()
+# 从环境变量中获取 ALPHAVANTAGE API Key
+ALPHA_VANTAGE_API_KEY = os.getenv("ALPHAVANTAGE_API_KEY")
+# 初始化 Alpha Vantage 客户端
+ts = TimeSeries(key=ALPHA_VANTAGE_API_KEY, output_format="pandas")
+fd = FundamentalData(key=ALPHA_VANTAGE_API_KEY, output_format="pandas")
 
+class MetricsWrapper:
+    """
+    用于包装财务指标数据，使之支持 model_dump() 方法（类似 pydantic 对象）
+    """
+    def __init__(self, data: dict):
+        self.__dict__.update(data)
+    def model_dump(self):
+        return self.__dict__
 
-def get_prices(ticker: str, start_date: str, end_date: str) -> list[Price]:
-    """Fetch price data from cache or API."""
-    # Check cache first
-    if cached_data := _cache.get_prices(ticker):
-        # Filter cached data by date range and convert to Price objects
-        filtered_data = [Price(**price) for price in cached_data if start_date <= price["time"] <= end_date]
-        if filtered_data:
-            return filtered_data
+def get_prices(ticker: str, start_date: str, end_date: str = None) -> list:
+    """使用 Alpha Vantage 获取历史价格数据
 
-    # If not in cache or no data in range, fetch from API
-    headers = {}
-    if api_key := os.environ.get("FINANCIAL_DATASETS_API_KEY"):
-        headers["X-API-KEY"] = api_key
-
-    url = f"https://api.financialdatasets.ai/prices/?ticker={ticker}&interval=day&interval_multiplier=1&start_date={start_date}&end_date={end_date}"
-    response = requests.get(url, headers=headers)
-    if response.status_code != 200:
-        raise Exception(f"Error fetching data: {response.status_code} - {response.text}")
-
-    # Parse response with Pydantic model
-    price_response = PriceResponse(**response.json())
-    prices = price_response.prices
-
-    if not prices:
+    返回的数据列表中，每个记录包含字段：
+    time, open, high, low, close, adjusted_close, volume, dividend_amount, split_coefficient
+    注意：这里将原来的“date”字段改为“time”，以便与后续转换保持一致。
+    """
+    try:
+        data, meta_data = ts.get_daily_adjusted(symbol=ticker, outputsize="full")
+        data = data.reset_index()
+        # 重命名列，使得第一列为 time（日期）
+        data.columns = ['time', 'open', 'high', 'low', 'close', 'adjusted_close', 
+                        'volume', 'dividend_amount', 'split_coefficient']
+        # 将日期转换为字符串格式（如 'YYYY-MM-DD'）
+        data['time'] = data['time'].dt.strftime('%Y-%m-%d')
+        # 过滤指定的日期范围
+        mask = (data['time'] >= start_date)
+        if end_date:
+            mask &= (data['time'] <= end_date)
+        filtered_data = data.loc[mask]
+        return filtered_data.to_dict('records')
+    except Exception as e:
+        print(f"Error fetching price data for {ticker}: {str(e)}")
         return []
 
-    # Cache the results as dicts
-    _cache.set_prices(ticker, [p.model_dump() for p in prices])
-    return prices
+def calculate_growth(df: pd.DataFrame, column_name: str) -> float:
+    """计算增长率, 用于收入、净利润、股东权益等数据"""
+    try:
+        if column_name not in df.columns or len(df) < 2:
+            return 0
+        current = float(df[column_name].iloc[0])
+        previous = float(df[column_name].iloc[1])
+        return (current - previous) / previous if previous != 0 else 0
+    except Exception as e:
+        print(f"Error calculating growth for {column_name}: {str(e)}")
+        return 0
 
+def get_financial_metrics(ticker: str, end_date: str = None, period: str = "ttm", limit: int = 10) -> list:
+    """使用 Alpha Vantage 获取公司财务指标数据
 
-def get_financial_metrics(
-    ticker: str,
-    end_date: str,
-    period: str = "ttm",
-    limit: int = 10,
-) -> list[FinancialMetrics]:
-    """Fetch financial metrics from cache or API."""
-    # Check cache first
-    if cached_data := _cache.get_financial_metrics(ticker):
-        # Filter cached data by date and limit
-        filtered_data = [FinancialMetrics(**metric) for metric in cached_data if metric["report_period"] <= end_date]
-        filtered_data.sort(key=lambda x: x.report_period, reverse=True)
-        if filtered_data:
-            return filtered_data[:limit]
-
-    # If not in cache or insufficient data, fetch from API
-    headers = {}
-    if api_key := os.environ.get("FINANCIAL_DATASETS_API_KEY"):
-        headers["X-API-KEY"] = api_key
-
-    url = f"https://api.financialdatasets.ai/financial-metrics/?ticker={ticker}&report_period_lte={end_date}&limit={limit}&period={period}"
-    response = requests.get(url, headers=headers)
-    if response.status_code != 200:
-        raise Exception(f"Error fetching data: {response.status_code} - {response.text}")
-
-    # Parse response with Pydantic model
-    metrics_response = FinancialMetricsResponse(**response.json())
-    # Return the FinancialMetrics objects directly instead of converting to dict
-    financial_metrics = metrics_response.financial_metrics
-
-    if not financial_metrics:
-        return []
-
-    # Cache the results as dicts
-    _cache.set_financial_metrics(ticker, [m.model_dump() for m in financial_metrics])
-    return financial_metrics
-
-
-def search_line_items(
-    ticker: str,
-    line_items: list[str],
-    end_date: str,
-    period: str = "ttm",
-    limit: int = 10,
-) -> list[LineItem]:
-    """Fetch line items from API."""
-    # If not in cache or insufficient data, fetch from API
-    headers = {}
-    if api_key := os.environ.get("FINANCIAL_DATASETS_API_KEY"):
-        headers["X-API-KEY"] = api_key
-
-    url = "https://api.financialdatasets.ai/financials/search/line-items"
-
-    body = {
-        "tickers": [ticker],
-        "line_items": line_items,
-        "end_date": end_date,
-        "period": period,
-        "limit": limit,
-    }
-    response = requests.post(url, headers=headers, json=body)
-    if response.status_code != 200:
-        raise Exception(f"Error fetching data: {response.status_code} - {response.text}")
-    data = response.json()
-    response_model = LineItemResponse(**data)
-    search_results = response_model.search_results
-    if not search_results:
-        return []
-
-    # Cache the results
-    return search_results[:limit]
-
-
-def get_insider_trades(
-    ticker: str,
-    end_date: str,
-    start_date: str | None = None,
-    limit: int = 1000,
-) -> list[InsiderTrade]:
-    """Fetch insider trades from cache or API."""
-    # Check cache first
-    if cached_data := _cache.get_insider_trades(ticker):
-        # Filter cached data by date range
-        filtered_data = [InsiderTrade(**trade) for trade in cached_data 
-                        if (start_date is None or (trade.get("transaction_date") or trade["filing_date"]) >= start_date)
-                        and (trade.get("transaction_date") or trade["filing_date"]) <= end_date]
-        filtered_data.sort(key=lambda x: x.transaction_date or x.filing_date, reverse=True)
-        if filtered_data:
-            return filtered_data
-
-    # If not in cache or insufficient data, fetch from API
-    headers = {}
-    if api_key := os.environ.get("FINANCIAL_DATASETS_API_KEY"):
-        headers["X-API-KEY"] = api_key
-
-    all_trades = []
-    current_end_date = end_date
-    
-    while True:
-        url = f"https://api.financialdatasets.ai/insider-trades/?ticker={ticker}&filing_date_lte={current_end_date}"
-        if start_date:
-            url += f"&filing_date_gte={start_date}"
-        url += f"&limit={limit}"
+    通过 FundamentalData 接口获取公司概览、年报数据，并计算各项财务比率和增长率。
+    返回的列表中包含一个支持 model_dump() 方法的 Metrics 对象。
+    """
+    try:
+        overview, _ = fd.get_company_overview(symbol=ticker)
+        income_stmt, _ = fd.get_income_statement_annual(symbol=ticker)
+        balance_sheet, _ = fd.get_balance_sheet_annual(symbol=ticker)
+        cash_flow, _ = fd.get_cash_flow_annual(symbol=ticker)
         
-        response = requests.get(url, headers=headers)
-        if response.status_code != 200:
-            raise Exception(f"Error fetching data: {response.status_code} - {response.text}")
+        try:
+            operating_cash = float(cash_flow["operatingCashflow"].iloc[0])
+            capex = float(cash_flow["capitalExpenditures"].iloc[0])
+            shares = float(overview["SharesOutstanding"].iloc[0])
+            free_cash_flow = operating_cash - capex
+            free_cash_flow_per_share = free_cash_flow / shares if shares != 0 else 0
+        except Exception as e:
+            print(f"Error calculating free cash flow per share: {str(e)}")
+            free_cash_flow_per_share = 0
         
+        metrics_data = {
+            "return_on_equity": float(overview["ReturnOnEquityTTM"].iloc[0]) if "ReturnOnEquityTTM" in overview.columns else 0,
+            "net_margin": float(overview["ProfitMargin"].iloc[0]) if "ProfitMargin" in overview.columns else 0,
+            "operating_margin": float(overview["OperatingMarginTTM"].iloc[0]) if "OperatingMarginTTM" in overview.columns else 0,
+            "revenue_growth": calculate_growth(income_stmt, "totalRevenue") if "totalRevenue" in income_stmt.columns else 0,
+            "earnings_growth": calculate_growth(income_stmt, "netIncome") if "netIncome" in income_stmt.columns else 0,
+            "book_value_growth": calculate_growth(balance_sheet, "totalStockholdersEquity") if "totalStockholdersEquity" in balance_sheet.columns else 0,
+            "current_ratio": float(overview["CurrentRatio"].iloc[0]) if "CurrentRatio" in overview.columns else 0,
+            "debt_to_equity": float(overview["DebtToEquityRatio"].iloc[0]) if "DebtToEquityRatio" in overview.columns else 0,
+            "price_to_earnings_ratio": float(overview["PERatio"].iloc[0]) if "PERatio" in overview.columns else 0,
+            "price_to_book_ratio": float(overview["PriceToBookRatio"].iloc[0]) if "PriceToBookRatio" in overview.columns else 0,
+            "price_to_sales_ratio": float(overview["PriceToSalesRatioTTM"].iloc[0]) if "PriceToSalesRatioTTM" in overview.columns else 0,
+            "earnings_per_share": float(overview["EPS"].iloc[0]) if "EPS" in overview.columns else 0,
+            "free_cash_flow_per_share": free_cash_flow_per_share,
+        }
+        metrics = MetricsWrapper(metrics_data)
+        return [metrics]
+    except Exception as e:
+        print(f"Error fetching financial metrics for {ticker}: {str(e)}")
+        default_data = {
+            "return_on_equity": 0,
+            "net_margin": 0,
+            "operating_margin": 0,
+            "revenue_growth": 0,
+            "earnings_growth": 0,
+            "book_value_growth": 0,
+            "current_ratio": 0,
+            "debt_to_equity": 0,
+            "price_to_earnings_ratio": 0,
+            "price_to_book_ratio": 0,
+            "price_to_sales_ratio": 0,
+            "earnings_per_share": 0,
+            "free_cash_flow_per_share": 0,
+        }
+        return [MetricsWrapper(default_data)]
+
+def search_line_items(ticker: str, line_items: list, end_date: str = None, period: str = "ttm", limit: int = 2) -> list:
+    """使用 Alpha Vantage 获取指定财务报表项目
+
+    函数从年报数据中抽取所需的项目（如自由现金流、净利润、收入、经营利润率等），
+    返回包含属性访问的 FinancialData 对象列表。
+    """
+    try:
+        income_stmt, _ = fd.get_income_statement_annual(symbol=ticker)
+        balance_sheet, _ = fd.get_balance_sheet_annual(symbol=ticker)
+        cash_flow, _ = fd.get_cash_flow_annual(symbol=ticker)
+
+        results = []
+        for i in range(min(limit, len(income_stmt))):
+            data = {}
+            for item in line_items:
+                if item == "free_cash_flow":
+                    operating_cash = float(cash_flow["operatingCashflow"].iloc[i])
+                    capex = float(cash_flow["capitalExpenditures"].iloc[i])
+                    data[item] = operating_cash - capex
+                elif item == "net_income":
+                    data[item] = float(income_stmt["netIncome"].iloc[i])
+                elif item == "depreciation_and_amortization":
+                    data[item] = float(cash_flow["depreciationDepletionAndAmortization"].iloc[i])
+                elif item == "capital_expenditure":
+                    data[item] = float(cash_flow["capitalExpenditures"].iloc[i])
+                elif item == "working_capital":
+                    current_assets = float(balance_sheet["totalCurrentAssets"].iloc[i])
+                    current_liabilities = float(balance_sheet["totalCurrentLiabilities"].iloc[i])
+                    data[item] = current_assets - current_liabilities
+                elif item == "revenue":
+                    data[item] = float(income_stmt["totalRevenue"].iloc[i]) if "totalRevenue" in income_stmt.columns else 0
+                elif item == "operating_margin":
+                    if "operatingIncome" in income_stmt.columns and "totalRevenue" in income_stmt.columns:
+                        total_revenue = float(income_stmt["totalRevenue"].iloc[i])
+                        operating_income = float(income_stmt["operatingIncome"].iloc[i])
+                        data[item] = operating_income / total_revenue if total_revenue != 0 else 0
+                    else:
+                        data[item] = 0
+                elif item == "debt_to_equity":
+                    if "totalLiabilities" in balance_sheet.columns and "totalStockholdersEquity" in balance_sheet.columns:
+                        total_liabilities = float(balance_sheet["totalLiabilities"].iloc[i])
+                        stockholders_equity = float(balance_sheet["totalStockholdersEquity"].iloc[i])
+                        data[item] = total_liabilities / stockholders_equity if stockholders_equity != 0 else 0
+                    else:
+                        data[item] = 0
+                elif item == "total_assets":
+                    data[item] = float(balance_sheet["totalAssets"].iloc[i]) if "totalAssets" in balance_sheet.columns else 0
+                elif item == "total_liabilities":
+                    data[item] = float(balance_sheet["totalLiabilities"].iloc[i]) if "totalLiabilities" in balance_sheet.columns else 0
+                elif item == "dividends_and_other_cash_distributions":
+                    # ALPHA VANTAGE 暂未提供此项数据，默认返回 0
+                    data[item] = 0
+                elif item == "outstanding_shares":
+                    # 尝试从公司概览中获取
+                    overview, _ = fd.get_company_overview(symbol=ticker)
+                    data[item] = float(overview["SharesOutstanding"].iloc[0]) if "SharesOutstanding" in overview.columns else 0
+                else:
+                    print(f"Warning: Unknown line item {item}")
+                    data[item] = 0
+            results.append(type('FinancialData', (), data)())
+        return results
+    except Exception as e:
+        print(f"Error fetching line items for {ticker}: {str(e)}")
+        default_data = {item: 0 for item in line_items}
+        return [type('FinancialData', (), default_data)()]
+
+def get_insider_trades(ticker: str, end_date: str = None, limit: int = 1000) -> list:
+    """使用 Alpha Vantage 获取内部交易数据
+
+    调用 ALPHAVANTAGE 的 INSIDER_TRANSACTIONS 接口，对返回的数据进行简单格式化。
+    """
+    try:
+        url = f'https://www.alphavantage.co/query?function=INSIDER_TRANSACTIONS&symbol={ticker}&apikey={ALPHA_VANTAGE_API_KEY}'
+        response = requests.get(url)
         data = response.json()
-        response_model = InsiderTradeResponse(**data)
-        insider_trades = response_model.insider_trades
         
-        if not insider_trades:
-            break
-            
-        all_trades.extend(insider_trades)
+        if not data or 'data' not in data:
+            print(f"No insider trade data available for {ticker}")
+            return []
         
-        # Only continue pagination if we have a start_date and got a full page
-        if not start_date or len(insider_trades) < limit:
-            break
-            
-        # Update end_date to the oldest filing date from current batch for next iteration
-        current_end_date = min(trade.filing_date for trade in insider_trades).split('T')[0]
-        
-        # If we've reached or passed the start_date, we can stop
-        if current_end_date <= start_date:
-            break
-
-    if not all_trades:
+        trades = data['data']
+        formatted_trades = []
+        for trade in trades:
+            try:
+                is_sale = trade.get('acquisition_or_disposal', '') == 'D'
+                share_price = trade.get('share_price', '0')
+                share_price = float(share_price) if share_price and share_price != '' else 0.0
+                shares = float(trade.get('shares', 0) or 0)
+                formatted_trade = type('InsiderTrade', (), {
+                    'date': trade.get('transaction_date', ''),
+                    'insider_name': trade.get('executive', ''),
+                    'insider_title': trade.get('executive_title', ''),
+                    'transaction_type': 'sell' if is_sale else 'buy',
+                    'price': share_price,
+                    'transaction_shares': shares,
+                    'value': share_price * shares,
+                    'shares_owned': 0,
+                })()
+                formatted_trades.append(formatted_trade)
+            except Exception as e:
+                print(f"Error processing trade: {str(e)}")
+                continue
+        print(f"\nDebug - Formatted {len(formatted_trades)} insider trades successfully")
+        return formatted_trades
+    except Exception as e:
+        print(f"Error fetching insider trades for {ticker}: {str(e)}")
         return []
 
-    # Cache the results
-    _cache.set_insider_trades(ticker, [trade.model_dump() for trade in all_trades])
-    return all_trades
+def get_market_cap(ticker: str, end_date: str = None) -> float:
+    """使用 Alpha Vantage 获取市值数据"""
+    try:
+        overview, _ = fd.get_company_overview(symbol=ticker)
+        market_cap = overview.get("MarketCapitalization")
+        if market_cap is not None:
+            return float(market_cap.iloc[0])
+        return 0
+    except Exception as e:
+        print(f"Error fetching market cap for {ticker}: {str(e)}")
+        return 0
 
+def prices_to_df(prices: list[dict]) -> pd.DataFrame:
+    """将价格数据转换为 DataFrame
 
-def get_company_news(
-    ticker: str,
-    end_date: str,
-    start_date: str | None = None,
-    limit: int = 1000,
-) -> list[CompanyNews]:
-    """Fetch company news from cache or API."""
-    # Check cache first
-    if cached_data := _cache.get_company_news(ticker):
-        # Filter cached data by date range
-        filtered_data = [CompanyNews(**news) for news in cached_data 
-                        if (start_date is None or news["date"] >= start_date)
-                        and news["date"] <= end_date]
-        filtered_data.sort(key=lambda x: x.date, reverse=True)
-        if filtered_data:
-            return filtered_data
-
-    # If not in cache or insufficient data, fetch from API
-    headers = {}
-    if api_key := os.environ.get("FINANCIAL_DATASETS_API_KEY"):
-        headers["X-API-KEY"] = api_key
-
-    all_news = []
-    current_end_date = end_date
-    
-    while True:
-        url = f"https://api.financialdatasets.ai/news/?ticker={ticker}&end_date={current_end_date}"
-        if start_date:
-            url += f"&start_date={start_date}"
-        url += f"&limit={limit}"
-        
-        response = requests.get(url, headers=headers)
-        if response.status_code != 200:
-            raise Exception(f"Error fetching data: {response.status_code} - {response.text}")
-        
-        data = response.json()
-        response_model = CompanyNewsResponse(**data)
-        company_news = response_model.news
-        
-        if not company_news:
-            break
-            
-        all_news.extend(company_news)
-        
-        # Only continue pagination if we have a start_date and got a full page
-        if not start_date or len(company_news) < limit:
-            break
-            
-        # Update end_date to the oldest date from current batch for next iteration
-        current_end_date = min(news.date for news in company_news).split('T')[0]
-        
-        # If we've reached or passed the start_date, we can stop
-        if current_end_date <= start_date:
-            break
-
-    if not all_news:
-        return []
-
-    # Cache the results
-    _cache.set_company_news(ticker, [news.model_dump() for news in all_news])
-    return all_news
-
-
-
-def get_market_cap(
-    ticker: str,
-    end_date: str,
-) -> float | None:
-    """Fetch market cap from the API."""
-    financial_metrics = get_financial_metrics(ticker, end_date)
-    market_cap = financial_metrics[0].market_cap
-    if not market_cap:
-        return None
-
-    return market_cap
-
-
-def prices_to_df(prices: list[Price]) -> pd.DataFrame:
-    """Convert prices to a DataFrame."""
-    df = pd.DataFrame([p.model_dump() for p in prices])
-    df["Date"] = pd.to_datetime(df["time"])
-    df.set_index("Date", inplace=True)
-    numeric_cols = ["open", "close", "high", "low", "volume"]
-    for col in numeric_cols:
-        df[col] = pd.to_numeric(df[col], errors="coerce")
-    df.sort_index(inplace=True)
+    将 price 字典列表转换为 DataFrame，并根据时间字段设置索引。
+    """
+    df = pd.DataFrame(prices)
+    if not df.empty and "time" in df.columns:
+        df["Date"] = pd.to_datetime(df["time"])
+        df.set_index("Date", inplace=True)
+        numeric_cols = ["open", "high", "low", "close", "adjusted_close", "volume", "dividend_amount", "split_coefficient"]
+        for col in numeric_cols:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors="coerce")
+        df.sort_index(inplace=True)
     return df
 
-
-# Update the get_price_data function to use the new functions
 def get_price_data(ticker: str, start_date: str, end_date: str) -> pd.DataFrame:
+    """获取价格数据并转换为 DataFrame"""
     prices = get_prices(ticker, start_date, end_date)
     return prices_to_df(prices)
+
+def get_company_news(ticker: str, end_date: str, start_date: str = None, limit: int = 1000) -> list:
+    """Alpha Vantage 暂不提供公司新闻数据，返回空列表"""
+    print("Alpha Vantage 暂不提供公司新闻数据")
+    return []
