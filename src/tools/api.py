@@ -45,7 +45,7 @@ def get_prices(ticker: str, start_date: str, end_date: str = None) -> list:
     except Exception as e:
         print(f"Error fetching price data for {ticker}: {str(e)}")
         return []
-
+    
 def calculate_growth(df: pd.DataFrame, column_name: str) -> float:
     """计算增长率, 用于收入、净利润、股东权益等数据"""
     try:
@@ -257,7 +257,106 @@ def get_price_data(ticker: str, start_date: str, end_date: str) -> pd.DataFrame:
     prices = get_prices(ticker, start_date, end_date)
     return prices_to_df(prices)
 
-def get_company_news(ticker: str, end_date: str, start_date: str = None, limit: int = 1000) -> list:
-    """Alpha Vantage 暂不提供公司新闻数据，返回空列表"""
-    print("Alpha Vantage 暂不提供公司新闻数据")
-    return []
+class MetricsWrapper:
+    """
+    用于包装财务指标数据，使之支持 model_dump() 方法（类似 pydantic 对象）
+    """
+    def __init__(self, data: dict):
+        self.__dict__.update(data)
+    def model_dump(self):
+        return self.__dict__
+
+class CompanyNews:
+    """
+    封装 Alpha Vantage 新闻数据，使新闻项支持属性访问。
+    例如，可以使用 news.sentiment 访问新闻情感数据。
+    """
+    def __init__(self, **kwargs):
+        self.__dict__.update(kwargs)
+    def model_dump(self):
+        return self.__dict__
+
+class CompanyNews:
+    """
+    封装 Alpha Vantage 新闻数据，使新闻项支持属性访问。
+    映射字段说明：
+      - time_published 映射为 date（仅保留日期部分）
+      - overall_sentiment_score 映射为 sentiment（转换为 float 类型）
+    例如，可以使用 news.sentiment 访问新闻情感数据，使用 news.date 进行日期过滤。
+    """
+    def __init__(self, **kwargs):
+        # 将 time_published 映射为 date（只取日期部分，“T”或空格分隔）
+        tp = kwargs.get("time_published", "")
+        if tp:
+            if "T" in tp:
+                self.date = tp.split("T")[0]
+            else:
+                self.date = tp.split(" ")[0]
+        else:
+            self.date = ""
+        # 将 overall_sentiment_score 映射为 sentiment，并转换为 float 类型（若无法转换则为 None）
+        s = kwargs.get("overall_sentiment_score", None)
+        try:
+            self.sentiment = float(s) if s is not None else None
+        except Exception:
+            self.sentiment = None
+        # 将其他属性也添加进来，但不覆盖已有的 date 与 sentiment
+        temp = {k: v for k, v in kwargs.items() if k not in ["time_published", "overall_sentiment_score"]}
+        self.__dict__.update(temp)
+    def model_dump(self):
+        return self.__dict__
+
+def get_company_news(ticker: str, start_date: str = None, end_date: str = None, limit: int = 50) -> list:
+    """使用 Alpha Vantage 获取公司新闻数据和情感数据
+
+    此接口调用 Alpha Vantage 的 NEWS_SENTIMENT 接口，通过传入的参数过滤指定时间范围内的新闻。
+
+    参数说明：
+      - function（必需）：固定为 "NEWS_SENTIMENT"
+      - tickers（可选）：例如 "AAPL"
+      - topics（可选）：过滤特定新闻主题
+      - time_from 和 time_to（可选）：要求的格式为 YYYYMMDDTHHMM。例如：time_from=20220410T0130
+           如果传入的 start_date 和 end_date 为 "YYYY-MM-DD" 格式，则会自动转换：
+             time_from = start_date 转换为 "YYYYMMDDT0000"
+             time_to   = end_date   转换为 "YYYYMMDDT2359"
+      - limit（可选）：返回结果的条数上限，默认 50
+      - sort（可选）：可设为 "LATEST"、"EARLIEST" 或 "RELEVANCE"，默认 "LATEST"
+      - apikey（必需）：你的 API Key
+    
+    示例调用（最简调用，不附加时间参数）：
+       https://www.alphavantage.co/query?function=NEWS_SENTIMENT&tickers=AAPL&apikey=your_api_key
+    """
+    try:
+        url = "https://www.alphavantage.co/query"
+        params = {
+            "function": "NEWS_SENTIMENT",
+            "tickers": ticker,
+            "apikey": ALPHA_VANTAGE_API_KEY,
+            "limit": limit,
+            "sort": "LATEST",
+        }
+        if start_date:
+            try:
+                dt_from = datetime.strptime(start_date, "%Y-%m-%d")
+                params["time_from"] = dt_from.strftime("%Y%m%dT0000")
+            except Exception as exc:
+                print(f"Invalid start_date format: {start_date}, expected YYYY-MM-DD")
+        if end_date:
+            try:
+                dt_end = datetime.strptime(end_date, "%Y-%m-%d")
+                params["time_to"] = dt_end.strftime("%Y%m%dT2359")
+            except Exception as exc:
+                print(f"Invalid end_date format: {end_date}, expected YYYY-MM-DD")
+        
+        response = requests.get(url, params=params)
+        json_data = response.json()
+        
+        if "feed" in json_data and json_data["feed"]:
+            # 使用 CompanyNews 包装返回的数据，确保每个新闻对象都有属性访问
+            return [CompanyNews(**item) for item in json_data["feed"]]
+        else:
+            print(f"Error fetching news for {ticker}: {json_data}")
+            return []
+    except Exception as e:
+        print(f"Error fetching company news for {ticker}: {str(e)}")
+        return []
