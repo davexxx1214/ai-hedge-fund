@@ -1,3 +1,6 @@
+from dotenv import load_dotenv
+load_dotenv()
+
 import os
 import pandas as pd
 import requests
@@ -182,10 +185,18 @@ def search_line_items(ticker: str, line_items: list, end_date: str = None, perio
         default_data = {item: 0 for item in line_items}
         return [type('FinancialData', (), default_data)()]
 
-def get_insider_trades(ticker: str, end_date: str = None, limit: int = 1000) -> list:
-    """使用 Alpha Vantage 获取内部交易数据
+def get_insider_trades(ticker: str, end_date: str, start_date: str = None, limit: int = 1000) -> list:
+    """使用 Alpha Vantage 获取内部交易数据，并根据交易日期过滤结果
 
-    调用 ALPHAVANTAGE 的 INSIDER_TRANSACTIONS 接口，对返回的数据进行简单格式化。
+    调用 ALPHAVANTAGE 的 INSIDER_TRANSACTIONS 接口返回所有内部交易数据，
+    根据传入的 start_date 和 end_date 与每条交易中的 transaction_date 进行比较，
+    过滤出在指定日期范围内的交易信息。
+
+    参数：
+      ticker      - 股票代码
+      end_date    - 截止日期（格式：YYYY-MM-DD）
+      start_date  - 起始日期（格式：YYYY-MM-DD），若为 None，则不过滤起始日期
+      limit       - 返回的记录条数上限，默认为 1000（在满足条件的数据中截取）
     """
     try:
         url = f'https://www.alphavantage.co/query?function=INSIDER_TRANSACTIONS&symbol={ticker}&apikey={ALPHA_VANTAGE_API_KEY}'
@@ -198,14 +209,25 @@ def get_insider_trades(ticker: str, end_date: str = None, limit: int = 1000) -> 
         
         trades = data['data']
         formatted_trades = []
+        
+        # 遍历所有返回的内部交易记录
         for trade in trades:
+            transaction_date = trade.get('transaction_date', '')
+            # 如果交易日期为空，则跳过该条记录
+            if not transaction_date:
+                continue
+            # 直接利用字符串比较（由于格式均为 YYYY-MM-DD）
+            if start_date and transaction_date < start_date:
+                continue
+            if end_date and transaction_date > end_date:
+                continue
             try:
-                is_sale = trade.get('acquisition_or_disposal', '') == 'D'
-                share_price = trade.get('share_price', '0')
-                share_price = float(share_price) if share_price and share_price != '' else 0.0
+                is_sale = (trade.get('acquisition_or_disposal', '') == 'D')
+                share_price_val = trade.get('share_price', '0')
+                share_price = float(share_price_val) if share_price_val and share_price_val != '' else 0.0
                 shares = float(trade.get('shares', 0) or 0)
                 formatted_trade = type('InsiderTrade', (), {
-                    'date': trade.get('transaction_date', ''),
+                    'date': transaction_date,
                     'insider_name': trade.get('executive', ''),
                     'insider_title': trade.get('executive_title', ''),
                     'transaction_type': 'sell' if is_sale else 'buy',
@@ -218,6 +240,11 @@ def get_insider_trades(ticker: str, end_date: str = None, limit: int = 1000) -> 
             except Exception as e:
                 print(f"Error processing trade: {str(e)}")
                 continue
+        
+        # 根据 limit 参数截取结果列表
+        if limit and len(formatted_trades) > limit:
+            formatted_trades = formatted_trades[:limit]
+        
         print(f"\nDebug - Formatted {len(formatted_trades)} insider trades successfully")
         return formatted_trades
     except Exception as e:
@@ -306,27 +333,34 @@ class CompanyNews:
     def model_dump(self):
         return self.__dict__
 
-def get_company_news(ticker: str, start_date: str = None, end_date: str = None, limit: int = 50) -> list:
-    """使用 Alpha Vantage 获取公司新闻数据和情感数据
+def get_company_news(ticker: str, end_date: str, start_date: str = None, limit: int = 1000) -> list:
+    """
+    使用 Alpha Vantage 获取公司新闻数据和情感数据，将 start_date 和 end_date 转换为 API 查询 URL 的时间参数。
 
-    此接口调用 Alpha Vantage 的 NEWS_SENTIMENT 接口，通过传入的参数过滤指定时间范围内的新闻。
+    参数:
+      ticker: 股票代码（例如 "AAPL"）。
+      end_date: 截止日期，格式为 "YYYY-MM-DD"。
+      start_date: 起始日期，格式为 "YYYY-MM-DD"。若为 None，则默认表示只查询 end_date 当天的新闻（即 start_date = end_date）。
+      limit: API 返回的记录条数上限（默认 1000）。
 
-    参数说明：
-      - function（必需）：固定为 "NEWS_SENTIMENT"
-      - tickers（可选）：例如 "AAPL"
-      - topics（可选）：过滤特定新闻主题
-      - time_from 和 time_to（可选）：要求的格式为 YYYYMMDDTHHMM。例如：time_from=20220410T0130
-           如果传入的 start_date 和 end_date 为 "YYYY-MM-DD" 格式，则会自动转换：
-             time_from = start_date 转换为 "YYYYMMDDT0000"
-             time_to   = end_date   转换为 "YYYYMMDDT2359"
-      - limit（可选）：返回结果的条数上限，默认 50
-      - sort（可选）：可设为 "LATEST"、"EARLIEST" 或 "RELEVANCE"，默认 "LATEST"
-      - apikey（必需）：你的 API Key
-    
-    示例调用（最简调用，不附加时间参数）：
-       https://www.alphavantage.co/query?function=NEWS_SENTIMENT&tickers=AAPL&apikey=your_api_key
+    根据 Alpha Vantage 新闻 API 文档：
+      - 可选参数 time_from 和 time_to 的格式为 YYYYMMDDTHHMM。
+      - 例如，要查询 2022-04-10 当天的新闻，则 time_from=20220410T0000 和 time_to=20220410T2359。
     """
     try:
+        # 如果只有一个日期传入，则补全另外一个
+        if start_date is None and end_date is not None:
+            start_date = end_date
+        elif end_date is None and start_date is not None:
+            end_date = start_date
+
+        time_from = None
+        time_to = None
+        if start_date and end_date:
+            # 将 "YYYY-MM-DD" 格式转换为 "YYYYMMDDT0000" 和 "YYYYMMDDT2359"
+            time_from = f"{start_date.replace('-', '')}T0000"
+            time_to = f"{end_date.replace('-', '')}T2359"
+
         url = "https://www.alphavantage.co/query"
         params = {
             "function": "NEWS_SENTIMENT",
@@ -335,25 +369,16 @@ def get_company_news(ticker: str, start_date: str = None, end_date: str = None, 
             "limit": limit,
             "sort": "LATEST",
         }
-        if start_date:
-            try:
-                dt_from = datetime.strptime(start_date, "%Y-%m-%d")
-                params["time_from"] = dt_from.strftime("%Y%m%dT0000")
-            except Exception as exc:
-                print(f"Invalid start_date format: {start_date}, expected YYYY-MM-DD")
-        if end_date:
-            try:
-                dt_end = datetime.strptime(end_date, "%Y-%m-%d")
-                params["time_to"] = dt_end.strftime("%Y%m%dT2359")
-            except Exception as exc:
-                print(f"Invalid end_date format: {end_date}, expected YYYY-MM-DD")
-        
+        if time_from:
+            params["time_from"] = time_from
+        if time_to:
+            params["time_to"] = time_to
+
         response = requests.get(url, params=params)
         json_data = response.json()
-        
         if "feed" in json_data and json_data["feed"]:
-            # 使用 CompanyNews 包装返回的数据，确保每个新闻对象都有属性访问
-            return [CompanyNews(**item) for item in json_data["feed"]]
+            news_items = [CompanyNews(**item) for item in json_data["feed"]]
+            return news_items
         else:
             print(f"Error fetching news for {ticker}: {json_data}")
             return []

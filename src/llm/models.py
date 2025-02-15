@@ -32,6 +32,16 @@ class LLMModel(BaseModel):
 # Define available models
 AVAILABLE_MODELS = [
     LLMModel(
+        display_name="[openai] gpt-4o-mini",
+        model_name="gpt-4o-mini",
+        provider=ModelProvider.OPENAI
+    ),
+    LLMModel(
+        display_name="[openai] grok:deepseek-r1-distill-qwen-32b",
+        model_name="groq",
+        provider=ModelProvider.OPENAI
+    ),
+    LLMModel(
         display_name="[anthropic] claude-3.5-haiku",
         model_name="claude-3-5-haiku-latest",
         provider=ModelProvider.ANTHROPIC
@@ -62,11 +72,6 @@ AVAILABLE_MODELS = [
         provider=ModelProvider.OPENAI
     ),
     LLMModel(
-        display_name="[openai] gpt-4o-mini",
-        model_name="gpt-4o-mini",
-        provider=ModelProvider.OPENAI
-    ),
-    LLMModel(
         display_name="[openai] o1",
         model_name="o1",
         provider=ModelProvider.OPENAI
@@ -76,6 +81,7 @@ AVAILABLE_MODELS = [
         model_name="o3-mini",
         provider=ModelProvider.OPENAI
     ),
+    
 ]
 
 # Create LLM_ORDER in the format expected by the UI
