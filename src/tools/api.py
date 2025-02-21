@@ -120,7 +120,7 @@ def get_financial_metrics(ticker: str, end_date: str = None, period: str = "ttm"
         return [MetricsWrapper(default_data)]
 
 def search_line_items(ticker: str, line_items: list, end_date: str = None, period: str = "ttm", limit: int = 2) -> list:
-    """使用 Alpha Vantage 获取指定财务报表项目
+    """使用 Alpha Vantage 获取指定财报项目
 
     函数从年报数据中抽取所需的项目（如自由现金流、净利润、收入、经营利润率等），
     返回包含属性访问的 FinancialData 对象列表。
@@ -131,7 +131,6 @@ def search_line_items(ticker: str, line_items: list, end_date: str = None, perio
         cash_flow, _ = fd.get_cash_flow_annual(symbol=ticker)
 
         results = []
-        # 此处遍历每个年度的数据（最多 limit 期）
         for i in range(min(limit, len(income_stmt))):
             data = {}
             for item in line_items:
@@ -151,14 +150,11 @@ def search_line_items(ticker: str, line_items: list, end_date: str = None, perio
                         data[item] = 0
                 elif item == "earnings_per_share":
                     try:
-                        # 获取净利润
                         net_income = float(income_stmt["netIncome"].iloc[i])
-                        # 尝试从资产负债表中获取 outstanding shares
                         shares = 0
                         if "commonStockSharesOutstanding" in balance_sheet.columns:
                             shares = float(balance_sheet["commonStockSharesOutstanding"].iloc[i])
                         else:
-                            # 备用方案：从公司概览中获取
                             overview, _ = fd.get_company_overview(symbol=ticker)
                             if "SharesOutstanding" in overview.columns:
                                 shares = float(overview["SharesOutstanding"].iloc[0])
@@ -168,7 +164,6 @@ def search_line_items(ticker: str, line_items: list, end_date: str = None, perio
                         data[item] = 0
                 elif item == "book_value_per_share":
                     try:
-                        # 每股账面价值 = 总股东权益 / 流通股数
                         equity = float(balance_sheet["totalShareholderEquity"].iloc[i])
                         shares = 0
                         if "commonStockSharesOutstanding" in balance_sheet.columns:
@@ -250,13 +245,54 @@ def search_line_items(ticker: str, line_items: list, end_date: str = None, perio
                         print(f"Error processing {item}: {str(e)}")
                         data[item] = 0
                 elif item == "dividends_and_other_cash_distributions":
-                    # ALPHA VANTAGE 暂未提供此项数据，默认返回 0
-                    data[item] = 0
+                    data[item] = 0  # ALPHA VANTAGE 暂未提供此项数据
                 elif item == "outstanding_shares":
                     try:
                         overview, _ = fd.get_company_overview(symbol=ticker)
                         if "SharesOutstanding" in overview.columns:
                             data[item] = float(overview["SharesOutstanding"].iloc[0])
+                        else:
+                            data[item] = 0
+                    except Exception as e:
+                        print(f"Error processing {item}: {str(e)}")
+                        data[item] = 0
+                elif item == "gross_margin":
+                    try:
+                        total_revenue = float(income_stmt["totalRevenue"].iloc[i]) if "totalRevenue" in income_stmt.columns else 0
+                        if total_revenue:
+                            if "grossProfit" in income_stmt.columns:
+                                gross_profit = float(income_stmt["grossProfit"].iloc[i])
+                                data[item] = gross_profit / total_revenue
+                            elif "costOfRevenue" in income_stmt.columns:
+                                cost_rev = float(income_stmt["costOfRevenue"].iloc[i])
+                                data[item] = (total_revenue - cost_rev) / total_revenue
+                            else:
+                                data[item] = 0
+                        else:
+                            data[item] = 0
+                    except Exception as e:
+                        print(f"Error processing {item}: {str(e)}")
+                        data[item] = 0
+                elif item == "research_and_development":
+                    try:
+                        if "researchAndDevelopment" in income_stmt.columns:
+                            data[item] = float(income_stmt["researchAndDevelopment"].iloc[i])
+                        elif "researchAndDevelopmentExpense" in income_stmt.columns:
+                            data[item] = float(income_stmt["researchAndDevelopmentExpense"].iloc[i])
+                        else:
+                            data[item] = 0
+                    except Exception as e:
+                        print(f"Error processing {item}: {str(e)}")
+                        data[item] = 0
+                elif item == "operating_expense":
+                    try:
+                        # TSLA 返回字段为 operatingExpenses（注意复数）
+                        if "operatingExpenses" in income_stmt.columns:
+                            data[item] = float(income_stmt["operatingExpenses"].iloc[i])
+                        elif "totalRevenue" in income_stmt.columns and "operatingIncome" in income_stmt.columns:
+                            revenue = float(income_stmt["totalRevenue"].iloc[i])
+                            op_income = float(income_stmt["operatingIncome"].iloc[i])
+                            data[item] = revenue - op_income
                         else:
                             data[item] = 0
                     except Exception as e:
