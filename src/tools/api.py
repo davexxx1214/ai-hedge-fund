@@ -129,6 +129,7 @@ def search_line_items(ticker: str, line_items: list, end_date: str = None, perio
         income_stmt, _ = fd.get_income_statement_annual(symbol=ticker)
         balance_sheet, _ = fd.get_balance_sheet_annual(symbol=ticker)
         cash_flow, _ = fd.get_cash_flow_annual(symbol=ticker)
+        overview, _ = fd.get_company_overview(symbol=ticker)
 
         results = []
         for i in range(min(limit, len(income_stmt))):
@@ -246,13 +247,107 @@ def search_line_items(ticker: str, line_items: list, end_date: str = None, perio
                         data[item] = 0
                 elif item == "dividends_and_other_cash_distributions":
                     data[item] = 0  # ALPHA VANTAGE 暂未提供此项数据
+                # 添加缺失的项目处理
                 elif item == "outstanding_shares":
                     try:
-                        overview, _ = fd.get_company_overview(symbol=ticker)
-                        if "SharesOutstanding" in overview.columns:
-                            data[item] = float(overview["SharesOutstanding"].iloc[0])
+                        if "commonStockSharesOutstanding" in balance_sheet.columns:
+                            data[item] = float(balance_sheet["commonStockSharesOutstanding"].iloc[i])
+                        else:
+                            if "SharesOutstanding" in overview.columns:
+                                data[item] = float(overview["SharesOutstanding"].iloc[0])
+                            else:
+                                data[item] = 0
+                    except Exception as e:
+                        print(f"Error processing {item}: {str(e)}")
+                        data[item] = 0
+                elif item == "operating_income":
+                    try:
+                        if "operatingIncome" in income_stmt.columns:
+                            data[item] = float(income_stmt["operatingIncome"].iloc[i])
+                        elif "totalRevenue" in income_stmt.columns and "operatingExpenses" in income_stmt.columns:
+                            revenue = float(income_stmt["totalRevenue"].iloc[i])
+                            operating_expenses = float(income_stmt["operatingExpenses"].iloc[i])
+                            data[item] = revenue - operating_expenses
                         else:
                             data[item] = 0
+                    except Exception as e:
+                        print(f"Error processing {item}: {str(e)}")
+                        data[item] = 0
+                elif item == "return_on_invested_capital":
+                    try:
+                        if "netIncome" in income_stmt.columns and "totalAssets" in balance_sheet.columns and "totalCurrentLiabilities" in balance_sheet.columns:
+                            net_income = float(income_stmt["netIncome"].iloc[i])
+                            total_assets = float(balance_sheet["totalAssets"].iloc[i])
+                            current_liabilities = float(balance_sheet["totalCurrentLiabilities"].iloc[i])
+                            invested_capital = total_assets - current_liabilities
+                            data[item] = net_income / invested_capital if invested_capital != 0 else 0
+                        else:
+                            data[item] = 0
+                    except Exception as e:
+                        print(f"Error processing {item}: {str(e)}")
+                        data[item] = 0
+                elif item == "cash_and_equivalents":
+                    try:
+                        if "cashAndCashEquivalentsAtCarryingValue" in balance_sheet.columns:
+                            data[item] = float(balance_sheet["cashAndCashEquivalentsAtCarryingValue"].iloc[i])
+                        elif "cashAndShortTermInvestments" in balance_sheet.columns:
+                            data[item] = float(balance_sheet["cashAndShortTermInvestments"].iloc[i])
+                        else:
+                            data[item] = 0
+                    except Exception as e:
+                        print(f"Error processing {item}: {str(e)}")
+                        data[item] = 0
+                elif item == "total_debt":
+                    try:
+                        short_term_debt = 0
+                        long_term_debt = 0
+                        if "shortTermDebt" in balance_sheet.columns:
+                            short_term_debt = float(balance_sheet["shortTermDebt"].iloc[i])
+                        if "longTermDebt" in balance_sheet.columns:
+                            long_term_debt = float(balance_sheet["longTermDebt"].iloc[i])
+                        data[item] = short_term_debt + long_term_debt
+                    except Exception as e:
+                        print(f"Error processing {item}: {str(e)}")
+                        data[item] = 0
+                elif item == "shareholders_equity":
+                    try:
+                        if "totalShareholderEquity" in balance_sheet.columns:
+                            data[item] = float(balance_sheet["totalShareholderEquity"].iloc[i])
+                        elif "totalStockholdersEquity" in balance_sheet.columns:
+                            data[item] = float(balance_sheet["totalStockholdersEquity"].iloc[i])
+                        else:
+                            data[item] = 0
+                    except Exception as e:
+                        print(f"Error processing {item}: {str(e)}")
+                        data[item] = 0
+                elif item == "operating_expense":
+                    try:
+                        if "operatingExpenses" in income_stmt.columns:
+                            data[item] = float(income_stmt["operatingExpenses"].iloc[i])
+                        elif "totalOperatingExpenses" in income_stmt.columns:
+                            data[item] = float(income_stmt["totalOperatingExpenses"].iloc[i])
+                        elif "totalRevenue" in income_stmt.columns and "operatingIncome" in income_stmt.columns:
+                            revenue = float(income_stmt["totalRevenue"].iloc[i])
+                            op_income = float(income_stmt["operatingIncome"].iloc[i])
+                            data[item] = revenue - op_income
+                        else:
+                            data[item] = 0
+                    except Exception as e:
+                        print(f"Error processing {item}: {str(e)}")
+                        data[item] = 0
+                elif item == "goodwill_and_intangible_assets":
+                    try:
+                        goodwill = 0
+                        intangible_assets = 0
+                        if "goodwill" in balance_sheet.columns:
+                            goodwill_val = balance_sheet["goodwill"].iloc[i]
+                            if goodwill_val and goodwill_val != 'None':
+                                goodwill = float(goodwill_val)
+                        if "intangibleAssets" in balance_sheet.columns:
+                            intangible_val = balance_sheet["intangibleAssets"].iloc[i]
+                            if intangible_val and intangible_val != 'None':
+                                intangible_assets = float(intangible_val)
+                        data[item] = goodwill + intangible_assets
                     except Exception as e:
                         print(f"Error processing {item}: {str(e)}")
                         data[item] = 0
@@ -284,20 +379,6 @@ def search_line_items(ticker: str, line_items: list, end_date: str = None, perio
                     except Exception as e:
                         print(f"Error processing {item}: {str(e)}")
                         data[item] = 0
-                elif item == "operating_expense":
-                    try:
-                        # TSLA 返回字段为 operatingExpenses（注意复数）
-                        if "operatingExpenses" in income_stmt.columns:
-                            data[item] = float(income_stmt["operatingExpenses"].iloc[i])
-                        elif "totalRevenue" in income_stmt.columns and "operatingIncome" in income_stmt.columns:
-                            revenue = float(income_stmt["totalRevenue"].iloc[i])
-                            op_income = float(income_stmt["operatingIncome"].iloc[i])
-                            data[item] = revenue - op_income
-                        else:
-                            data[item] = 0
-                    except Exception as e:
-                        print(f"Error processing {item}: {str(e)}")
-                        data[item] = 0
                 else:
                     print(f"Warning: Unknown line item {item}")
             results.append(MetricsWrapper(data))
@@ -305,7 +386,7 @@ def search_line_items(ticker: str, line_items: list, end_date: str = None, perio
     except Exception as e:
         print(f"Error fetching line items for {ticker}: {str(e)}")
         return []
-
+        
 def get_insider_trades(ticker: str, end_date: str, start_date: str = None, limit: int = 1000) -> list:
     """使用 Alpha Vantage 获取内部交易数据，并根据交易日期过滤结果
 
