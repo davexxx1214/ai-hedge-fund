@@ -8,17 +8,38 @@ class Cache:
         self._insider_trades_cache: dict[str, list[dict[str, any]]] = {}
         self._company_news_cache: dict[str, list[dict[str, any]]] = {}
 
-    def _merge_data(self, existing: list[dict] | None, new_data: list[dict], key_field: str) -> list[dict]:
+    def _merge_data(self, existing: list | None, new_data: list, key_field: str) -> list:
         """Merge existing and new data, avoiding duplicates based on a key field."""
         if not existing:
             return new_data
         
         # Create a set of existing keys for O(1) lookup
-        existing_keys = {item[key_field] for item in existing}
+        existing_keys = set()
+        for item in existing:
+            # 处理对象和字典两种情况
+            if hasattr(item, key_field):
+                # 如果是对象，使用 getattr 获取属性
+                existing_keys.add(getattr(item, key_field))
+            elif isinstance(item, dict) and key_field in item:
+                # 如果是字典，使用 [] 获取属性
+                existing_keys.add(item[key_field])
         
         # Only add items that don't exist yet
         merged = existing.copy()
-        merged.extend([item for item in new_data if item[key_field] not in existing_keys])
+        for item in new_data:
+            # 同样处理对象和字典两种情况
+            if hasattr(item, key_field):
+                key_value = getattr(item, key_field)
+                if key_value not in existing_keys:
+                    merged.append(item)
+            elif isinstance(item, dict) and key_field in item:
+                key_value = item[key_field]
+                if key_value not in existing_keys:
+                    merged.append(item)
+            else:
+                # 如果既不是对象也不是字典，或者没有指定的键，直接添加
+                merged.append(item)
+        
         return merged
 
     def get_prices(self, ticker: str) -> list[dict[str, any]] | None:
