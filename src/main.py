@@ -52,6 +52,7 @@ def run_hedge_fund(
     selected_analysts: list[str] = [],
     model_name: str = "gpt-4o",
     model_provider: str = "OpenAI",
+    disable_short_positions: bool = False,
 ):
     # Start progress tracking
     progress.start()
@@ -64,6 +65,12 @@ def run_hedge_fund(
         else:
             agent = app
 
+        # Create portfolio manager config if short positions are disabled
+        portfolio_manager_config = None
+        if disable_short_positions:
+            from agents.portfolio_manager import PortfolioManagerConfig
+            portfolio_manager_config = PortfolioManagerConfig(disable_short_positions=True)
+            
         final_state = agent.invoke(
             {
                 "messages": [
@@ -77,6 +84,7 @@ def run_hedge_fund(
                     "start_date": start_date,
                     "end_date": end_date,
                     "analyst_signals": {},
+                    "portfolio_manager_config": portfolio_manager_config,
                 },
                 "metadata": {
                     "show_reasoning": show_reasoning,
@@ -157,6 +165,9 @@ if __name__ == "__main__":
     parser.add_argument("--show-reasoning", action="store_true", help="Show reasoning from each agent")
     parser.add_argument(
         "--show-agent-graph", action="store_true", help="Show the agent graph"
+    )
+    parser.add_argument(
+        "--disable-short-positions", action="store_true", help="Disable short and cover operations, only allow buy, sell, and hold"
     )
 
     args = parser.parse_args()
@@ -277,5 +288,6 @@ if __name__ == "__main__":
         selected_analysts=selected_analysts,
         model_name=model_choice,
         model_provider=model_provider,
+        disable_short_positions=args.disable_short_positions,
     )
     print_trading_output(result)

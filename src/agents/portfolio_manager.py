@@ -16,6 +16,10 @@ class PortfolioDecision(BaseModel):
     reasoning: str = Field(description="Reasoning for the decision")
 
 
+class PortfolioManagerConfig(BaseModel):
+    disable_short_positions: bool = Field(default=False, description="If True, disables short and cover operations")
+
+
 class PortfolioManagerOutput(BaseModel):
     decisions: dict[str, PortfolioDecision] = Field(description="Dictionary of ticker to trading decisions")
 
@@ -59,6 +63,9 @@ def portfolio_management_agent(state: AgentState):
 
     progress.update_status("portfolio_management_agent", None, "Making trading decisions")
 
+    # Get configuration
+    config = state["data"].get("portfolio_manager_config", PortfolioManagerConfig())
+    
     # Generate the trading decision
     result = generate_trading_decision(
         tickers=tickers,
@@ -68,6 +75,7 @@ def portfolio_management_agent(state: AgentState):
         portfolio=portfolio,
         model_name=state["metadata"]["model_name"],
         model_provider=state["metadata"]["model_provider"],
+        config=config,
     )
 
     # Create the portfolio management message
@@ -96,47 +104,67 @@ def generate_trading_decision(
     portfolio: dict[str, float],
     model_name: str,
     model_provider: str,
+    config: PortfolioManagerConfig = PortfolioManagerConfig(),
 ) -> PortfolioManagerOutput:
     """Attempts to get a decision from the LLM with retry logic"""
     # Create the prompt template
+    # Determine system prompt based on config
+    system_prompt = """You are a portfolio manager making final trading decisions based on multiple tickers.
+
+Trading Rules:
+- For long positions:
+  * Only buy if you have available cash
+  * Only sell if you currently hold long shares of that ticker
+  * Sell quantity must be ≤ current long position shares
+  * Buy quantity must be ≤ max_shares for that ticker
+"""
+              
+    if config is None or not config.disable_short_positions:
+        system_prompt += """
+- For short positions:
+  * Only short if you have available margin (50% of position value required)
+  * Only cover if you currently have short shares of that ticker
+  * Cover quantity must be ≤ current short position shares
+  * Short quantity must respect margin requirements
+
+- The max_shares values are pre-calculated to respect position limits
+- Consider both long and short opportunities based on signals
+- Maintain appropriate risk management with both long and short exposure
+
+Available Actions:
+- "buy": Open or add to long position
+- "sell": Close or reduce long position
+- "short": Open or add to short position
+- "cover": Close or reduce short position
+- "hold": No action
+"""
+    else:
+        system_prompt += """
+- The max_shares values are pre-calculated to respect position limits
+- Consider only long opportunities based on signals
+- Short positions are disabled
+
+Available Actions:
+- "buy": Open or add to long position
+- "sell": Close or reduce long position
+- "hold": No action (used when bearish instead of short)
+"""
+    
+    system_prompt += """
+Inputs:
+- signals_by_ticker: dictionary of ticker → signals
+- max_shares: maximum shares allowed per ticker
+- portfolio_cash: current cash in portfolio
+- portfolio_positions: current positions (both long and short)
+- current_prices: current prices for each ticker
+- margin_requirement: current margin requirement for short positions
+"""
+    
     template = ChatPromptTemplate.from_messages(
         [
             (
               "system",
-              """You are a portfolio manager making final trading decisions based on multiple tickers.
-
-              Trading Rules:
-              - For long positions:
-                * Only buy if you have available cash
-                * Only sell if you currently hold long shares of that ticker
-                * Sell quantity must be ≤ current long position shares
-                * Buy quantity must be ≤ max_shares for that ticker
-              
-              - For short positions:
-                * Only short if you have available margin (50% of position value required)
-                * Only cover if you currently have short shares of that ticker
-                * Cover quantity must be ≤ current short position shares
-                * Short quantity must respect margin requirements
-              
-              - The max_shares values are pre-calculated to respect position limits
-              - Consider both long and short opportunities based on signals
-              - Maintain appropriate risk management with both long and short exposure
-
-              Available Actions:
-              - "buy": Open or add to long position
-              - "sell": Close or reduce long position
-              - "short": Open or add to short position
-              - "cover": Close or reduce short position
-              - "hold": No action
-
-              Inputs:
-              - signals_by_ticker: dictionary of ticker → signals
-              - max_shares: maximum shares allowed per ticker
-              - portfolio_cash: current cash in portfolio
-              - portfolio_positions: current positions (both long and short)
-              - current_prices: current prices for each ticker
-              - margin_requirement: current margin requirement for short positions
-              """,
+              system_prompt,
             ),
             (
               "human",
@@ -191,4 +219,19 @@ def generate_trading_decision(
     def create_default_portfolio_output():
         return PortfolioManagerOutput(decisions={ticker: PortfolioDecision(action="hold", quantity=0, confidence=0.0, reasoning="Error in portfolio management, defaulting to hold") for ticker in tickers})
 
-    return call_llm(prompt=prompt, model_name=model_name, model_provider=model_provider, pydantic_model=PortfolioManagerOutput, agent_name="portfolio_management_agent", default_factory=create_default_portfolio_output)
+    # Get the LLM response
+    result = call_llm(prompt=prompt, model_name=model_name, model_provider=model_provider, pydantic_model=PortfolioManagerOutput, agent_name="portfolio_management_agent", default_factory=create_default_portfolio_output)
+    
+    # If short positions are disabled, convert any "short" actions to "hold" and remove "cover" actions
+    if config is not None and config.disable_short_positions:
+        for ticker, decision in result.decisions.items():
+            if decision.action == "short":
+                decision.action = "hold"
+                decision.quantity = 0
+                decision.reasoning += " (Short position converted to hold because short positions are disabled)"
+            elif decision.action == "cover":
+                decision.action = "hold"
+                decision.quantity = 0
+                decision.reasoning += " (Cover action converted to hold because short positions are disabled)"
+    
+    return result

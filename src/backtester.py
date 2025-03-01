@@ -38,6 +38,7 @@ class Backtester:
         model_provider: str = "OpenAI",
         selected_analysts: list[str] = [],
         initial_margin_requirement: float = 0.0,
+        disable_short_positions: bool = False,
     ):
         """
         :param agent: The trading agent (Callable).
@@ -61,6 +62,9 @@ class Backtester:
 
         # Store the margin ratio (e.g. 0.5 means 50% margin required).
         self.margin_ratio = initial_margin_requirement
+        
+        # Store the short positions configuration
+        self.disable_short_positions = disable_short_positions
 
         # Initialize portfolio with support for long/short positions
         self.portfolio_values = []
@@ -92,7 +96,12 @@ class Backtester:
         """
         if quantity <= 0:
             return 0
-
+            
+        # If short positions are disabled, convert short to hold and cover to hold
+        if self.disable_short_positions:
+            if action == "short" or action == "cover":
+                return 0
+                
         quantity = int(quantity)  # force integer shares
         position = self.portfolio["positions"][ticker]
 
@@ -649,6 +658,11 @@ if __name__ == "__main__":
         default=0.0,
         help="Margin ratio for short positions, e.g. 0.5 for 50% (default: 0.0)",
     )
+    parser.add_argument(
+        "--disable-short-positions",
+        action="store_true",
+        help="Disable short and cover operations, only allow buy, sell, and hold",
+    )
 
     args = parser.parse_args()
 
@@ -717,6 +731,7 @@ if __name__ == "__main__":
         model_provider=model_provider,
         selected_analysts=selected_analysts,
         initial_margin_requirement=args.margin_requirement,
+        disable_short_positions=args.disable_short_positions,
     )
 
     performance_metrics = backtester.run_backtest()
