@@ -190,7 +190,7 @@ Inputs:
                     "action": "buy/sell/short/cover/hold",
                     "quantity": integer,
                     "confidence": float,
-                    "reasoning": "string"
+                    "reasoning": "请用中文解释你的决策理由"
                   }},
                   "TICKER2": {{
                     ...
