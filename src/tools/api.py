@@ -77,9 +77,24 @@ def save_to_file_cache(cache_type, ticker, data, params=None):
     
     try:
         # 对于不同类型的数据，可能需要不同的序列化方法
-        if isinstance(data, list) and len(data) > 0 and hasattr(data[0], 'model_dump'):
-            # 如果是对象列表，使用 model_dump 方法
-            serialized_data = [item.model_dump() if hasattr(item, 'model_dump') else item for item in data]
+        if isinstance(data, list) and len(data) > 0:
+            if hasattr(data[0], 'model_dump'):
+                # 如果是对象列表，使用 model_dump 方法
+                serialized_data = [item.model_dump() if hasattr(item, 'model_dump') else item for item in data]
+            elif cache_type == 'insider_trades':
+                # 特殊处理 insider_trades 数据
+                serialized_data = []
+                for item in data:
+                    # 将对象的属性转换为字典
+                    item_dict = {}
+                    for attr in dir(item):
+                        # 跳过私有属性和方法
+                        if not attr.startswith('_') and not callable(getattr(item, attr)):
+                            item_dict[attr] = getattr(item, attr)
+                    serialized_data.append(item_dict)
+            else:
+                # 其他情况直接保存
+                serialized_data = data
         else:
             # 其他情况直接保存
             serialized_data = data
@@ -117,7 +132,7 @@ def load_from_file_cache(cache_type, ticker, params=None, max_age_days=30):
             return [MetricsWrapper(item) for item in data]
         elif cache_type == 'insider_trades':
             # 创建具有属性访问的对象
-            return [type('InsiderTrade', (), item)() for item in data]
+            return [type('InsiderTrade', (), item if isinstance(item, dict) else {'error': 'Invalid data format'})() for item in data]
         elif cache_type == 'company_news':
             # 创建 CompanyNews 对象
             return [CompanyNews(**item) for item in data]
