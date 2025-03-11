@@ -589,6 +589,26 @@ def search_line_items(ticker: str, line_items: list, end_date: str = None, perio
                     except Exception as e:
                         print(f"Error processing {item}: {str(e)}")
                         data[item] = 0
+                elif item == "ebit":
+                    try:
+                        # 使用营业利润率和总收入计算 EBIT
+                        operating_margin = float(overview["OperatingMarginTTM"].iloc[0])
+                        revenue = float(overview["RevenueTTM"].iloc[0])
+                        data[item] = operating_margin * revenue
+                    except Exception as e:
+                        print(f"Error processing {item}: {str(e)}")
+                        data[item] = 0
+                elif item == "ebitda":
+                    try:
+                        # 直接从 overview 获取
+                        if "EBITDA" in overview.columns:
+                            data[item] = float(overview["EBITDA"].iloc[0])
+                        else:
+                            data[item] = 0
+                    except Exception as e:
+                        print(f"Error processing {item}: {str(e)}")
+                        data[item] = 0
+
                 elif item == "goodwill_and_intangible_assets":
                     try:
                         goodwill = 0
