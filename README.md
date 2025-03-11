@@ -153,6 +153,26 @@ You can use the same options as the regular backtester:
 poetry run python src/backtestergroup.py --ticker AAPL,MSFT,NVDA --start-date 2024-01-01 --end-date 2024-03-01 --disable-short-positions
 ```
 
+#### Saving Backtest Results
+
+You can save the backtest results to files for later analysis:
+
+```bash
+poetry run python src/backtestergroup.py --ticker AAPL,MSFT,NVDA --start-date 2024-01-01 --end-date 2024-03-01 --save-results ./results --output-format both
+```
+
+This will create a timestamped folder in the specified directory (e.g., `./results/backtest_20250312_002139/`) containing:
+
+- `trade_records.csv`: All trading actions during the backtest period
+- `portfolio_summary.csv`: Summary of portfolio performance
+- `backtest_results.json`: Complete backtest data in JSON format
+- `portfolio_value_chart.png`: A high-quality chart showing portfolio value over time
+
+Available options for `--output-format`:
+- `csv`: Save results as CSV files only
+- `json`: Save results as JSON file only
+- `both`: Save results in both formats (default)
+
 ## Project Structure 
 ```
 ai-hedge-fund/
