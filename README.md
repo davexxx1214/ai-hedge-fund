@@ -40,6 +40,7 @@ By using this software, you agree to use it solely for learning purposes.
 - [Usage](#usage)
   - [Running the Hedge Fund](#running-the-hedge-fund)
   - [Running the Backtester](#running-the-backtester)
+  - [Running the Group Backtester](#running-the-group-backtester)
 - [Project Structure](#project-structure)
 - [Contributing](#contributing)
 - [Feature Requests](#feature-requests)
@@ -118,12 +119,38 @@ poetry run python src/backtester.py --ticker AAPL,MSFT,NVDA
 ```
 
 **Example Output:**
-<img width="941" alt="Screenshot 2025-01-06 at 5 47 52 PM" src="https://github.com/user-attachments/assets/00e794ea-8628-44e6-9a84-8f8a31ad3b47" />
+<img width="941" alt="Screenshot 2025-01-06 at 5 47 52 PM" src="https://github.com/user-attachments/assets/00e794ea-8628-44e6-9a84-8f8a31ad3b47" />
 
 You can optionally specify the start and end dates to backtest over a specific time period.
 
 ```bash
 poetry run python src/backtester.py --ticker AAPL,MSFT,NVDA --start-date 2024-01-01 --end-date 2024-03-01
+```
+
+### Running the Group Backtester
+
+The group backtester allows you to backtest predefined groups of analysts instead of selecting them individually.
+
+```bash
+poetry run python src/backtestergroup.py --ticker AAPL,MSFT,NVDA
+```
+
+The backtester groups analysts into two categories:
+
+1. **价值驱动型 (Fundamentals-Driven Agents)**
+   - Includes: Ben Graham, Warren Buffett, Charlie Munger, Bill Ackman, Valuation Agent, Fundamentals Agent
+   - Focus on company fundamentals, intrinsic value, and long-term growth potential
+
+2. **变量捕捉型 (Dynamic Signal Agents)**
+   - Includes: Cathie Wood, Stanley Druckenmiller, Sentiment Agent, Technicals Agent
+   - Focus on market trends, technical signals, and short to medium-term opportunities
+
+This allows you to compare the performance of different investment philosophies and strategies.
+
+You can use the same options as the regular backtester:
+
+```bash
+poetry run python src/backtestergroup.py --ticker AAPL,MSFT,NVDA --start-date 2024-01-01 --end-date 2024-03-01 --disable-short-positions
 ```
 
 ## Project Structure 
@@ -142,6 +169,7 @@ ai-hedge-fund/
 │   ├── tools/                    # Agent tools
 │   │   ├── api.py                # API tools
 │   ├── backtester.py             # Backtesting tools
+│   ├── backtestergroup.py        # Group backtesting tools
 │   ├── main.py # Main entry point
 ├── pyproject.toml
 ├── ...
