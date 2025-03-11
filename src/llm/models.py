@@ -45,7 +45,7 @@ class LLMModel(BaseModel):
 # Define available models
 AVAILABLE_MODELS = [
 	LLMModel(
-        display_name="[openai] grok:deepseek-r1-distill-qwen-32b",
+        display_name="[openai] grok:qwen-qwq-32b",
         model_name="groq",
         provider=ModelProvider.OPENAI
     ),
