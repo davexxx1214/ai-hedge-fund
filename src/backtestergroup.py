@@ -46,15 +46,13 @@ AGENT_GROUPS = {
     }
 }
 
-def save_backtest_results(table_rows, performance_metrics, save_path, output_format="csv", tickers=None, start_date=None, end_date=None, performance_df=None):
+def save_backtest_results(table_rows, performance_metrics, tickers=None, start_date=None, end_date=None, performance_df=None):
     """
     保存回测结果到文件
     
     Args:
         table_rows (list): 回测结果表格行
         performance_metrics (dict): 性能指标
-        save_path (str): 保存路径
-        output_format (str): 输出格式 (csv, json, both)
         tickers (list): 股票代码列表
         start_date (str): 开始日期
         end_date (str): 结束日期
@@ -63,14 +61,10 @@ def save_backtest_results(table_rows, performance_metrics, save_path, output_for
     # 创建时间戳文件夹
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     
-    # 如果save_path是目录，则在其中创建时间戳文件夹
-    if os.path.isdir(save_path) or not os.path.exists(save_path):
-        save_dir = os.path.join(save_path, f"backtest_{timestamp}")
-        os.makedirs(save_dir, exist_ok=True)
-    else:
-        # 如果save_path是文件路径，则使用该路径的目录
-        save_dir = os.path.dirname(save_path)
-        os.makedirs(save_dir, exist_ok=True)
+    # 确保 results 目录存在
+    save_path = "./results"
+    save_dir = os.path.join(save_path, f"backtest_{timestamp}")
+    os.makedirs(save_dir, exist_ok=True)
     
     # 提取交易记录和摘要
     trade_records = []
@@ -112,36 +106,15 @@ def save_backtest_results(table_rows, performance_metrics, save_path, output_for
         summary_df = pd.DataFrame()
     
     # 保存为CSV
-    if output_format in ["csv", "both"]:
-        if not trade_df.empty:
-            trade_csv_path = os.path.join(save_dir, "trade_records.csv")
-            trade_df.to_csv(trade_csv_path, index=False)
-            print(f"交易记录已保存到: {trade_csv_path}")
-        
-        if not summary_df.empty:
-            summary_csv_path = os.path.join(save_dir, "portfolio_summary.csv")
-            summary_df.to_csv(summary_csv_path, index=False)
-            print(f"投资组合摘要已保存到: {summary_csv_path}")
+    if not trade_df.empty:
+        trade_csv_path = os.path.join(save_dir, "trade_records.csv")
+        trade_df.to_csv(trade_csv_path, index=False)
+        print(f"交易记录已保存到: {trade_csv_path}")
     
-    # 保存为JSON
-    if output_format in ["json", "both"]:
-        # 创建完整的结果字典
-        result_dict = {
-            "metadata": {
-                "tickers": tickers,
-                "start_date": start_date,
-                "end_date": end_date,
-                "timestamp": timestamp
-            },
-            "trade_records": trade_df.to_dict(orient="records") if not trade_df.empty else [],
-            "portfolio_summary": summary_df.to_dict(orient="records") if not summary_df.empty else [],
-            "performance_metrics": performance_metrics
-        }
-        
-        json_path = os.path.join(save_dir, "backtest_results.json")
-        with open(json_path, "w", encoding="utf-8") as f:
-            json.dump(result_dict, f, indent=2, ensure_ascii=False)
-        print(f"完整回测结果已保存到: {json_path}")
+    if not summary_df.empty:
+        summary_csv_path = os.path.join(save_dir, "portfolio_summary.csv")
+        summary_df.to_csv(summary_csv_path, index=False)
+        print(f"投资组合摘要已保存到: {summary_csv_path}")
     
     # 保存图表
     if performance_df is not None and not performance_df.empty:
@@ -262,19 +235,6 @@ if __name__ == "__main__":
         action="store_true",
         help="禁用做空和平仓操作，只允许买入、卖出和持有",
     )
-    parser.add_argument(
-        "--save-results",
-        type=str,
-        default="",
-        help="保存回测结果的路径 (默认不保存)",
-    )
-    parser.add_argument(
-        "--output-format",
-        type=str,
-        choices=["csv", "json", "both"],
-        default="csv",
-        help="输出格式: csv, json 或 both (默认: csv)",
-    )
 
     args = parser.parse_args()
 
@@ -347,103 +307,100 @@ if __name__ == "__main__":
     performance_metrics = backtester_group.run_backtest()
     performance_df = backtester_group.analyze_performance()
     
-    # 如果指定了保存路径，则保存回测结果
-    if args.save_results:
-        # 重新运行回测以获取表格行数据
-        # 由于backtester.py中的table_rows是局部变量，我们需要手动重建它
-        
-        # 创建交易记录
-        trade_records = []
-        for ticker in tickers:
-            position = backtester_group.backtester.portfolio["positions"][ticker]
-            # 获取最新价格
-            try:
-                current_date_str = args.end_date
-                previous_date_str = (datetime.strptime(args.end_date, "%Y-%m-%d") - timedelta(days=1)).strftime("%Y-%m-%d")
-                current_price = get_price_data(ticker, previous_date_str, current_date_str).iloc[-1]["close"]
-            except:
-                current_price = 0
-                
-            # 计算持仓价值
-            long_val = position["long"] * current_price if current_price > 0 else 0
-            short_val = position["short"] * current_price if current_price > 0 else 0
-            net_position_value = long_val - short_val
+    # 自动保存回测结果
+    # 重新运行回测以获取表格行数据
+    # 由于backtester.py中的table_rows是局部变量，我们需要手动重建它
+    
+    # 创建交易记录
+    trade_records = []
+    for ticker in tickers:
+        position = backtester_group.backtester.portfolio["positions"][ticker]
+        # 获取最新价格
+        try:
+            current_date_str = args.end_date
+            previous_date_str = (datetime.strptime(args.end_date, "%Y-%m-%d") - timedelta(days=1)).strftime("%Y-%m-%d")
+            current_price = get_price_data(ticker, previous_date_str, current_date_str).iloc[-1]["close"]
+        except:
+            current_price = 0
             
-            # 添加开始日期的记录
-            trade_records.append(
-                format_backtest_row(
-                    date=args.start_date,
-                    ticker=ticker,
-                    action="HOLD" if position["long"] == 0 and position["short"] == 0 else 
-                           "LONG" if position["long"] > 0 else "SHORT",
-                    quantity=max(position["long"], position["short"]),
-                    price=current_price,
-                    shares_owned=position["long"] - position["short"],
-                    position_value=net_position_value,
-                    bullish_count=0,
-                    bearish_count=0,
-                    neutral_count=0,
-                )
-            )
-            
-            # 添加结束日期的记录
-            trade_records.append(
-                format_backtest_row(
-                    date=args.end_date,
-                    ticker=ticker,
-                    action="HOLD",
-                    quantity=0,
-                    price=current_price,
-                    shares_owned=position["long"] - position["short"],
-                    position_value=net_position_value,
-                    bullish_count=0,
-                    bearish_count=0,
-                    neutral_count=0,
-                )
-            )
+        # 计算持仓价值
+        long_val = position["long"] * current_price if current_price > 0 else 0
+        short_val = position["short"] * current_price if current_price > 0 else 0
+        net_position_value = long_val - short_val
         
-        # 添加投资组合摘要
-        final_portfolio_value = backtester_group.backtester.calculate_portfolio_value({
-            ticker: get_price_data(ticker, 
-                                  (datetime.strptime(args.end_date, "%Y-%m-%d") - timedelta(days=1)).strftime("%Y-%m-%d"), 
-                                  args.end_date).iloc[-1]["close"] 
-            for ticker in tickers
-        }) if tickers else backtester_group.backtester.portfolio["cash"]
-        
-        total_position_value = final_portfolio_value - backtester_group.backtester.portfolio["cash"]
-        portfolio_return = ((final_portfolio_value / backtester_group.backtester.initial_capital) - 1) * 100
-        
+        # 添加开始日期的记录
         trade_records.append(
             format_backtest_row(
-                date=args.end_date,
-                ticker="",
-                action="",
-                quantity=0,
-                price=0,
-                shares_owned=0,
-                position_value=0,
+                date=args.start_date,
+                ticker=ticker,
+                action="HOLD" if position["long"] == 0 and position["short"] == 0 else 
+                       "LONG" if position["long"] > 0 else "SHORT",
+                quantity=max(position["long"], position["short"]),
+                price=current_price,
+                shares_owned=position["long"] - position["short"],
+                position_value=net_position_value,
                 bullish_count=0,
                 bearish_count=0,
                 neutral_count=0,
-                is_summary=True,
-                total_value=final_portfolio_value,
-                return_pct=portfolio_return,
-                cash_balance=backtester_group.backtester.portfolio["cash"],
-                total_position_value=total_position_value,
-                sharpe_ratio=performance_metrics.get('sharpe_ratio'),
-                sortino_ratio=performance_metrics.get('sortino_ratio'),
-                max_drawdown=performance_metrics.get('max_drawdown'),
             )
         )
         
-        save_dir = save_backtest_results(
-            table_rows=trade_records,
-            performance_metrics=performance_metrics,
-            save_path=args.save_results,
-            output_format=args.output_format,
-            tickers=tickers,
-            start_date=args.start_date,
-            end_date=args.end_date,
-            performance_df=performance_df
+        # 添加结束日期的记录
+        trade_records.append(
+            format_backtest_row(
+                date=args.end_date,
+                ticker=ticker,
+                action="HOLD",
+                quantity=0,
+                price=current_price,
+                shares_owned=position["long"] - position["short"],
+                position_value=net_position_value,
+                bullish_count=0,
+                bearish_count=0,
+                neutral_count=0,
+            )
         )
-        print(f"\n{Fore.GREEN}回测结果已保存到: {save_dir}{Style.RESET_ALL}")
+    
+    # 添加投资组合摘要
+    final_portfolio_value = backtester_group.backtester.calculate_portfolio_value({
+        ticker: get_price_data(ticker, 
+                              (datetime.strptime(args.end_date, "%Y-%m-%d") - timedelta(days=1)).strftime("%Y-%m-%d"), 
+                              args.end_date).iloc[-1]["close"] 
+        for ticker in tickers
+    }) if tickers else backtester_group.backtester.portfolio["cash"]
+    
+    total_position_value = final_portfolio_value - backtester_group.backtester.portfolio["cash"]
+    portfolio_return = ((final_portfolio_value / backtester_group.backtester.initial_capital) - 1) * 100
+    
+    trade_records.append(
+        format_backtest_row(
+            date=args.end_date,
+            ticker="",
+            action="",
+            quantity=0,
+            price=0,
+            shares_owned=0,
+            position_value=0,
+            bullish_count=0,
+            bearish_count=0,
+            neutral_count=0,
+            is_summary=True,
+            total_value=final_portfolio_value,
+            return_pct=portfolio_return,
+            cash_balance=backtester_group.backtester.portfolio["cash"],
+            total_position_value=total_position_value,
+            sharpe_ratio=performance_metrics.get('sharpe_ratio'),
+            sortino_ratio=performance_metrics.get('sortino_ratio'),
+            max_drawdown=performance_metrics.get('max_drawdown'),
+        )
+    )
+        
+    save_dir = save_backtest_results(
+        table_rows=trade_records,
+        performance_metrics=performance_metrics,
+        tickers=tickers,
+        start_date=args.start_date,
+        end_date=args.end_date,
+        performance_df=performance_df
+    )
+    print(f"\n{Fore.GREEN}回测结果已保存到: {save_dir}{Style.RESET_ALL}")
