@@ -186,7 +186,7 @@ class Backtester:
                 position["short_margin_used"] += margin_required
                 self.portfolio["margin_used"] += margin_required
 
-                # Increase cash by proceeds, then subtract the required margin
+                # 增加卖出所得，然后扣除保证金
                 self.portfolio["cash"] += proceeds
                 self.portfolio["cash"] -= margin_required
                 return quantity
@@ -214,6 +214,7 @@ class Backtester:
                     position["short_margin_used"] += margin_required
                     self.portfolio["margin_used"] += margin_required
 
+                    # 增加卖出所得，然后扣除保证金
                     self.portfolio["cash"] += proceeds
                     self.portfolio["cash"] -= margin_required
                     return max_quantity
