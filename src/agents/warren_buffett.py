@@ -238,12 +238,13 @@ def calculate_owner_earnings(financial_line_items: list) -> dict[str, any]:
 def calculate_intrinsic_value(financial_line_items: list) -> dict[str, any]:
     """Calculate intrinsic value using DCF with owner earnings."""
     if not financial_line_items:
-        return {"value": None, "details": ["Insufficient data for valuation"]}
+        return {"intrinsic_value": None, "details": ["Insufficient data for valuation"]}
 
     # Calculate owner earnings
     earnings_data = calculate_owner_earnings(financial_line_items)
     if not earnings_data["owner_earnings"]:
-        return {"value": None, "details": earnings_data["details"]}
+        return {"intrinsic_value": None, "details": earnings_data["details"]}
+
 
     owner_earnings = earnings_data["owner_earnings"]
 

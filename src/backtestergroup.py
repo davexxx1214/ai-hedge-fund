@@ -92,6 +92,12 @@ def save_backtest_results(table_rows, performance_metrics, tickers=None, start_d
             "Date", "Ticker", "Action", "Quantity", "Price", "Shares", 
             "Position Value", "Bullish", "Bearish", "Neutral"
         ])
+        
+        # 按日期排序交易记录
+        if "Date" in trade_df.columns:
+            trade_df["Date"] = pd.to_datetime(trade_df["Date"])
+            trade_df = trade_df.sort_values(by="Date")
+            trade_df["Date"] = trade_df["Date"].dt.strftime("%Y-%m-%d")
     else:
         trade_df = pd.DataFrame()
     
@@ -307,59 +313,103 @@ if __name__ == "__main__":
     performance_metrics = backtester_group.run_backtest()
     performance_df = backtester_group.analyze_performance()
     
-    # 自动保存回测结果
-    # 重新运行回测以获取表格行数据
-    # 由于backtester.py中的table_rows是局部变量，我们需要手动重建它
-    
-    # 创建交易记录
+    # 获取回测过程中的所有交易记录
+    # 从backtester对象中提取交易记录
     trade_records = []
-    for ticker in tickers:
-        position = backtester_group.backtester.portfolio["positions"][ticker]
-        # 获取最新价格
-        try:
-            current_date_str = args.end_date
-            previous_date_str = (datetime.strptime(args.end_date, "%Y-%m-%d") - timedelta(days=1)).strftime("%Y-%m-%d")
-            current_price = get_price_data(ticker, previous_date_str, current_date_str).iloc[-1]["close"]
-        except:
-            current_price = 0
+    
+    # 检查backtester对象是否有交易历史属性
+    if hasattr(backtester_group.backtester, 'trade_history') and backtester_group.backtester.trade_history:
+        # 如果有交易历史属性，直接使用它
+        for trade in backtester_group.backtester.trade_history:
+            trade_records.append(
+                format_backtest_row(
+                    date=trade['date'],
+                    ticker=trade['ticker'],
+                    action=trade['action'],
+                    quantity=trade['quantity'],
+                    price=trade['price'],
+                    shares_owned=trade['shares_after'],
+                    position_value=trade['position_value'],
+                    bullish_count=trade.get('bullish_count', 0),
+                    bearish_count=trade.get('bearish_count', 0),
+                    neutral_count=trade.get('neutral_count', 0),
+                )
+            )
+    else:
+        # 如果没有交易历史属性，则从backtester对象的其他属性中提取
+        # 这里假设backtester对象有一个transactions属性，存储了所有交易
+        if hasattr(backtester_group.backtester, 'transactions') and backtester_group.backtester.transactions:
+            for transaction in backtester_group.backtester.transactions:
+                trade_records.append(
+                    format_backtest_row(
+                        date=transaction['date'],
+                        ticker=transaction['ticker'],
+                        action=transaction['action'],
+                        quantity=transaction['quantity'],
+                        price=transaction['price'],
+                        shares_owned=transaction['shares_after'],
+                                                position_value=transaction.get('position_value', 0),
+                        bullish_count=transaction.get('bullish_count', 0),
+                        bearish_count=transaction.get('bearish_count', 0),
+                        neutral_count=transaction.get('neutral_count', 0),
+                    )
+                )
+        else:
+            # 如果没有交易历史记录，则使用原始方法
+            print(f"{Fore.YELLOW}警告: 无法获取完整的交易历史记录，将尝试从回测结果中提取{Style.RESET_ALL}")
             
-        # 计算持仓价值
-        long_val = position["long"] * current_price if current_price > 0 else 0
-        short_val = position["short"] * current_price if current_price > 0 else 0
-        net_position_value = long_val - short_val
-        
-        # 添加开始日期的记录
-        trade_records.append(
-            format_backtest_row(
-                date=args.start_date,
-                ticker=ticker,
-                action="HOLD" if position["long"] == 0 and position["short"] == 0 else 
-                       "LONG" if position["long"] > 0 else "SHORT",
-                quantity=max(position["long"], position["short"]),
-                price=current_price,
-                shares_owned=position["long"] - position["short"],
-                position_value=net_position_value,
-                bullish_count=0,
-                bearish_count=0,
-                neutral_count=0,
-            )
-        )
-        
-        # 添加结束日期的记录
-        trade_records.append(
-            format_backtest_row(
-                date=args.end_date,
-                ticker=ticker,
-                action="HOLD",
-                quantity=0,
-                price=current_price,
-                shares_owned=position["long"] - position["short"],
-                position_value=net_position_value,
-                bullish_count=0,
-                bearish_count=0,
-                neutral_count=0,
-            )
-        )
+            # 从回测结果中提取所有交易记录
+            # 这里假设backtester.run_backtest()的输出包含了所有交易记录
+            # 如果不是，则需要修改backtester.py来保存交易记录
+            
+            # 退回到原来的方法，只创建开始和结束日期的记录
+            for ticker in tickers:
+                position = backtester_group.backtester.portfolio["positions"][ticker]
+                # 获取最新价格
+                try:
+                    current_date_str = args.end_date
+                    previous_date_str = (datetime.strptime(args.end_date, "%Y-%m-%d") - timedelta(days=1)).strftime("%Y-%m-%d")
+                    current_price = get_price_data(ticker, previous_date_str, current_date_str).iloc[-1]["close"]
+                except:
+                    current_price = 0
+                    
+                # 计算持仓价值
+                long_val = position["long"] * current_price if current_price > 0 else 0
+                short_val = position["short"] * current_price if current_price > 0 else 0
+                net_position_value = long_val - short_val
+                
+                # 添加开始日期的记录
+                trade_records.append(
+                    format_backtest_row(
+                        date=args.start_date,
+                        ticker=ticker,
+                        action="HOLD" if position["long"] == 0 and position["short"] == 0 else 
+                               "LONG" if position["long"] > 0 else "SHORT",
+                        quantity=max(position["long"], position["short"]),
+                        price=current_price,
+                        shares_owned=position["long"] - position["short"],
+                        position_value=net_position_value,
+                        bullish_count=0,
+                        bearish_count=0,
+                        neutral_count=0,
+                    )
+                )
+                
+                # 添加结束日期的记录
+                trade_records.append(
+                    format_backtest_row(
+                        date=args.end_date,
+                        ticker=ticker,
+                        action="HOLD",
+                        quantity=0,
+                        price=current_price,
+                        shares_owned=position["long"] - position["short"],
+                        position_value=net_position_value,
+                        bullish_count=0,
+                        bearish_count=0,
+                        neutral_count=0,
+                    )
+                )
     
     # 添加投资组合摘要
     final_portfolio_value = backtester_group.backtester.calculate_portfolio_value({

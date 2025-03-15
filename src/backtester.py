@@ -68,6 +68,7 @@ class Backtester:
 
         # Initialize portfolio with support for long/short positions
         self.portfolio_values = []
+        self.trade_history = []  # 用于存储所有交易记录
         self.portfolio = {
             "cash": initial_capital,
             "margin_used": 0.0,  # total margin usage across all short positions
@@ -456,6 +457,20 @@ class Backtester:
                         neutral_count=neutral_count,
                     )
                 )
+                
+                # 将交易记录添加到trade_history中
+                self.trade_history.append({
+                    'date': current_date_str,
+                    'ticker': ticker,
+                    'action': action,
+                    'quantity': quantity,
+                    'price': current_prices[ticker],
+                    'shares_after': pos["long"] - pos["short"],
+                    'position_value': net_position_value,
+                    'bullish_count': bullish_count,
+                    'bearish_count': bearish_count,
+                    'neutral_count': neutral_count
+                })
             # ---------------------------------------------------------------
             # 4) Calculate performance summary metrics
             # ---------------------------------------------------------------
