@@ -786,18 +786,31 @@ def get_insider_trades(ticker: str, end_date: str, start_date: str = None, limit
         print(f"Error fetching insider trades for {ticker}: {str(e)}")
         return []
 
+# 添加内存缓存支持
+_market_cap_cache: dict[str, float] = {}
+
 def get_market_cap(ticker: str, end_date: str = None) -> float:
     """使用 Alpha Vantage 获取市值数据"""
+    # 构建缓存键
+    cache_key = f"{ticker}_{end_date}" if end_date else ticker
+    
+    # 尝试从内存缓存获取
+    if cache_key in _market_cap_cache:
+        print(f"从内存缓存获取 {ticker} 的市值数据")
+        return _market_cap_cache[cache_key]
+    
     # 构建缓存参数
     cache_params = {'end': end_date}
     
     # 尝试从文件缓存获取
     file_cached_data = load_from_file_cache('market_cap', ticker, cache_params)
-    if file_cached_data is not None and not should_refresh_financial_data(ticker, end_date):
+    if file_cached_data is not None:
+        # 更新内存缓存
+        _market_cap_cache[cache_key] = file_cached_data
         print(f"从文件缓存获取 {ticker} 的市值数据")
         return file_cached_data
     
-    # 如果缓存中没有或需要刷新，则从 API 获取
+    # 如果缓存中没有，则从 API 获取
     try:
         # 检查 API 请求限制
         check_rate_limit()
@@ -808,6 +821,7 @@ def get_market_cap(ticker: str, end_date: str = None) -> float:
             result = float(market_cap.iloc[0])
             
             # 保存到缓存
+            _market_cap_cache[cache_key] = result
             save_to_file_cache('market_cap', ticker, result, cache_params)
             
             return result
