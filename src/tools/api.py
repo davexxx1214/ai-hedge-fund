@@ -345,7 +345,23 @@ def get_financial_metrics(ticker: str, end_date: str = None, period: str = "ttm"
         }
         return [MetricsWrapper(default_data)]
 
+FIELD_MAPPING = {
+    "current_assets": "totalCurrentAssets",
+    "current_liabilities": "totalCurrentLiabilities",
+    "total_assets": "totalAssets",
+    "total_liabilities": "totalLiabilities",
+    "net_income": "netIncome",
+    "operating_income": "operatingIncome",
+    "revenue": "totalRevenue",
+    "depreciation_and_amortization": "depreciationDepletionAndAmortization",
+    "capital_expenditure": "capitalExpenditures",
+    "cash_and_equivalents": "cashAndCashEquivalentsAtCarryingValue",
+    "shareholders_equity": "totalShareholderEquity",
+    "outstanding_shares": "commonStockSharesOutstanding"
+}
+
 def search_line_items(ticker: str, line_items: list, end_date: str = None, period: str = "ttm", limit: int = 2) -> list:
+    """仅查找 Alpha Vantage 已有字段，预留计算字段，并进行字段名转换"""
     """使用 Alpha Vantage 获取指定财报项目
 
     函数从年报数据中抽取所需的项目（如自由现金流、净利润、收入、经营利润率等），
@@ -404,17 +420,18 @@ def search_line_items(ticker: str, line_items: list, end_date: str = None, perio
             else:
                 data["report_period"] = datetime.now().strftime('%Y-%m-%d')
             for item in line_items:
-                if item == "free_cash_flow":
+                mapped_item = FIELD_MAPPING.get(item, item)
+                if mapped_item in income_stmt.columns:
+                    data[item] = float(income_stmt[mapped_item].iloc[i])
+                elif mapped_item in balance_sheet.columns:
+                    data[item] = float(balance_sheet[mapped_item].iloc[i])
+                elif mapped_item in cash_flow.columns:
+                    data[item] = float(cash_flow[mapped_item].iloc[i])
+                elif mapped_item in overview.columns:
+                    data[item] = float(overview[mapped_item].iloc[0])
+                elif item == "free_cash_flow":
                     try:
-                        operating_cash = float(cash_flow["operatingCashflow"].iloc[i])
-                        capex = float(cash_flow["capitalExpenditures"].iloc[i])
-                        data[item] = operating_cash - capex
-                    except Exception as e:
-                        print(f"Error processing {item}: {str(e)}")
-                        data[item] = 0
-                elif item == "net_income":
-                    try:
-                        data[item] = float(income_stmt["netIncome"].iloc[i])
+                        data[item] = float(cash_flow["operatingCashflow"].iloc[i]) - float(cash_flow["capitalExpenditures"].iloc[i])
                     except Exception as e:
                         print(f"Error processing {item}: {str(e)}")
                         data[item] = 0
@@ -481,24 +498,13 @@ def search_line_items(ticker: str, line_items: list, end_date: str = None, perio
                         print(f"Error processing {item}: {str(e)}")
                         data[item] = 0
                 elif item == "operating_margin":
-                    try:
-                        if "operatingIncome" in income_stmt.columns and "totalRevenue" in income_stmt.columns:
-                            total_revenue = float(income_stmt["totalRevenue"].iloc[i])
-                            operating_income = float(income_stmt["operatingIncome"].iloc[i])
-                            data[item] = operating_income / total_revenue if total_revenue != 0 else 0
-                        else:
-                            data[item] = 0
-                    except Exception as e:
-                        print(f"Error processing {item}: {str(e)}")
-                        data[item] = 0
+                    if "OperatingMarginTTM" in overview.columns:
+                        data[item] = float(overview["OperatingMarginTTM"].iloc[0])
                 elif item == "debt_to_equity":
                     try:
-                        if "totalLiabilities" in balance_sheet.columns and "totalShareholderEquity" in balance_sheet.columns:
-                            total_liabilities = float(balance_sheet["totalLiabilities"].iloc[i])
-                            stockholders_equity = float(balance_sheet["totalShareholderEquity"].iloc[i])
-                            data[item] = total_liabilities / stockholders_equity if stockholders_equity != 0 else 0
-                        else:
-                            data[item] = 0
+                        total_liabilities = float(balance_sheet["totalLiabilities"].iloc[i])
+                        shareholders_equity = float(balance_sheet["totalShareholderEquity"].iloc[i])
+                        data[item] = total_liabilities / shareholders_equity if shareholders_equity != 0 else 0
                     except Exception as e:
                         print(f"Error processing {item}: {str(e)}")
                         data[item] = 0
@@ -568,13 +574,13 @@ def search_line_items(ticker: str, line_items: list, end_date: str = None, perio
                         data[item] = 0
                 elif item == "total_debt":
                     try:
-                        short_term_debt = 0
-                        long_term_debt = 0
-                        if "shortTermDebt" in balance_sheet.columns:
-                            short_term_debt = float(balance_sheet["shortTermDebt"].iloc[i])
-                        if "longTermDebt" in balance_sheet.columns:
-                            long_term_debt = float(balance_sheet["longTermDebt"].iloc[i])
-                        data[item] = short_term_debt + long_term_debt
+                        if "shortLongTermDebtTotal" in balance_sheet.columns:
+                            data[item] = float(balance_sheet["shortLongTermDebtTotal"].iloc[i])
+                        else:
+                            short_term_debt = float(balance_sheet["shortTermDebt"].iloc[i]) if "shortTermDebt" in balance_sheet.columns else 0
+                            long_term_debt = float(balance_sheet["longTermDebt"].iloc[i]) if "longTermDebt" in balance_sheet.columns else 0
+                            current_long_term_debt = float(balance_sheet["currentLongTermDebt"].iloc[i]) if "currentLongTermDebt" in balance_sheet.columns else 0
+                            data[item] = short_term_debt + long_term_debt + current_long_term_debt
                     except Exception as e:
                         print(f"Error processing {item}: {str(e)}")
                         data[item] = 0
