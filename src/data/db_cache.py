@@ -21,10 +21,11 @@ class DBCache(Cache):
         
         # 如果内存缓存没有，则从数据库获取
         db_data = self.db.get_prices(ticker)
-        if db_data:
-            # 更新内存缓存
-            super().set_prices(ticker, db_data)
-            return db_data
+        if db_data is not None and len(db_data) > 0:  # 修改这里的判断条件
+            # 转换DataFrame为字典列表并更新缓存
+            data_list = db_data.to_dict('records')
+            super().set_prices(ticker, data_list)
+            return data_list
         
         return None
     
@@ -35,51 +36,77 @@ class DBCache(Cache):
         # 更新数据库
         self.db.set_prices(ticker, data)
     
-    def get_financial_metrics(self, ticker: str) -> list[dict[str, any]]:
+    def get_income_statement_annual(self, ticker: str) -> list[dict[str, any]] | None:
         """先从内存缓存获取，如果没有则从数据库获取"""
         # 先尝试从内存缓存获取
-        cached_data = super().get_financial_metrics(ticker)
+        cached_data = super().get_income_statement_annual(ticker)
         if cached_data:
             return cached_data
         
         # 如果内存缓存没有，则从数据库获取
-        db_data = self.db.get_financial_metrics(ticker)
-        if db_data:
-            # 更新内存缓存
-            super().set_financial_metrics(ticker, db_data)
-            return db_data
+        db_data = self.db.get_income_statement_annual(ticker)
+        if db_data is not None and len(db_data) > 0:  # 修改这里的判断条件
+            # 转换DataFrame为字典列表并更新缓存
+            data_list = db_data.to_dict('records')
+            super().set_income_statement_annual(ticker, data_list)
+            return data_list
         
         return None
     
-    def set_financial_metrics(self, ticker: str, data: list[dict[str, any]]):
+    def set_income_statement_annual(self, ticker: str, data: list[dict[str, any]]):
         """同时更新内存缓存和数据库"""
         # 更新内存缓存
-        super().set_financial_metrics(ticker, data)
+        super().set_income_statement_annual(ticker, data)
         # 更新数据库
-        self.db.set_financial_metrics(ticker, data)
+        self.db.set_income_statement_annual(ticker, data)
     
-    def get_line_items(self, ticker: str) -> list[dict[str, any]] | None:
+    def get_balance_sheet_annual(self, ticker: str) -> list[dict[str, any]] | None:
         """先从内存缓存获取，如果没有则从数据库获取"""
         # 先尝试从内存缓存获取
-        cached_data = super().get_line_items(ticker)
+        cached_data = super().get_balance_sheet_annual(ticker)
         if cached_data:
             return cached_data
         
         # 如果内存缓存没有，则从数据库获取
-        db_data = self.db.get_line_items(ticker)
-        if db_data:
-            # 更新内存缓存
-            super().set_line_items(ticker, db_data)
-            return db_data
+        db_data = self.db.get_balance_sheet_annual(ticker)
+        if db_data is not None and len(db_data) > 0:  # 修改这里的判断条件
+            # 转换DataFrame为字典列表并更新缓存
+            data_list = db_data.to_dict('records')
+            super().set_balance_sheet_annual(ticker, data_list)
+            return data_list
         
         return None
     
-    def set_line_items(self, ticker: str, data: list[dict[str, any]]):
+    def set_balance_sheet_annual(self, ticker: str, data: list[dict[str, any]]):
         """同时更新内存缓存和数据库"""
         # 更新内存缓存
-        super().set_line_items(ticker, data)
+        super().set_balance_sheet_annual(ticker, data)
         # 更新数据库
-        self.db.set_line_items(ticker, data)
+        self.db.set_balance_sheet_annual(ticker, data)
+    
+    def get_cash_flow_annual(self, ticker: str) -> list[dict[str, any]] | None:
+        """先从内存缓存获取，如果没有则从数据库获取"""
+        # 先尝试从内存缓存获取
+        cached_data = super().get_cash_flow_annual(ticker)
+        if cached_data:
+            return cached_data
+        
+        # 如果内存缓存没有，则从数据库获取
+        db_data = self.db.get_cash_flow_annual(ticker)
+        if db_data is not None and len(db_data) > 0:  # 修改这里的判断条件
+            # 转换DataFrame为字典列表并更新缓存
+            data_list = db_data.to_dict('records')
+            super().set_cash_flow_annual(ticker, data_list)
+            return data_list
+        
+        return None
+    
+    def set_cash_flow_annual(self, ticker: str, data: list[dict[str, any]]):
+        """同时更新内存缓存和数据库"""
+        # 更新内存缓存
+        super().set_cash_flow_annual(ticker, data)
+        # 更新数据库
+        self.db.set_cash_flow_annual(ticker, data)
     
     def get_insider_trades(self, ticker: str) -> list[dict[str, any]] | None:
         """先从内存缓存获取，如果没有则从数据库获取"""
@@ -90,10 +117,11 @@ class DBCache(Cache):
         
         # 如果内存缓存没有，则从数据库获取
         db_data = self.db.get_insider_trades(ticker)
-        if db_data:
-            # 更新内存缓存
-            super().set_insider_trades(ticker, db_data)
-            return db_data
+        if db_data is not None and len(db_data) > 0:  # 修改这里的判断条件
+            # 转换DataFrame为字典列表并更新缓存
+            data_list = db_data.to_dict('records')
+            super().set_insider_trades(ticker, data_list)
+            return data_list
         
         return None
     
@@ -113,10 +141,11 @@ class DBCache(Cache):
         
         # 如果内存缓存没有，则从数据库获取
         db_data = self.db.get_company_news(ticker)
-        if db_data:
-            # 更新内存缓存
-            super().set_company_news(ticker, db_data)
-            return db_data
+        if db_data is not None and len(db_data) > 0:  # 修改这里的判断条件
+            # 转换DataFrame为字典列表并更新缓存
+            data_list = db_data.to_dict('records')
+            super().set_company_news(ticker, data_list)
+            return data_list
         
         return None
     

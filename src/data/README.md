@@ -1,6 +1,6 @@
 # 股票金融数据SQLite数据库
 
-本模块提供了一个SQLite数据库实现，用于存储和管理股票的金融数据。数据库支持存储股票价格、财务指标、财务项目、内部交易和公司新闻等数据。
+本模块提供了一个SQLite数据库实现，用于存储和管理股票的金融数据。数据库支持存储股票价格、财务报表、内部交易和公司新闻等数据。
 
 ## 数据库结构
 
@@ -15,18 +15,25 @@
    - dividend_amount: 股息金额
    - split_coefficient: 拆分系数
 
-2. **financial_metrics** - 存储财务指标数据
+2. **income_statement_annual** - 存储年度利润表数据
    - ticker: 股票代码
-   - report_period: 报告期
-   - 各种财务比率和指标，如市盈率、市净率、毛利率等
+   - fiscalDateEnding: 财报日期
+   - reportedCurrency: 报告货币
+   - 各种利润表项目，如总收入、营业利润、净利润等
 
-3. **line_items** - 存储财务项目数据
+3. **balance_sheet_annual** - 存储年度资产负债表数据
    - ticker: 股票代码
-   - report_period: 报告期
-   - item_name: 项目名称
-   - item_value: 项目值
+   - fiscalDateEnding: 财报日期
+   - reportedCurrency: 报告货币
+   - 各种资产负债表项目，如总资产、总负债、股东权益等
 
-4. **insider_trades** - 存储内部交易数据
+4. **cash_flow_annual** - 存储年度现金流量表数据
+   - ticker: 股票代码
+   - fiscalDateEnding: 财报日期
+   - reportedCurrency: 报告货币
+   - 各种现金流量表项目，如经营现金流、投资现金流、融资现金流等
+
+5. **insider_trades** - 存储内部交易数据
    - ticker: 股票代码
    - transaction_date: 交易日期
    - name: 交易者姓名
@@ -35,7 +42,7 @@
    - transaction_price_per_share: 每股交易价格
    - transaction_value: 交易总值
 
-5. **company_news** - 存储公司新闻数据
+6. **company_news** - 存储公司新闻数据
    - ticker: 股票代码
    - date: 新闻日期
    - title: 新闻标题
@@ -70,9 +77,8 @@ sql_tools = get_sql_tools()
 prices = get_prices('AAPL', '2023-01-01', '2023-12-31')
 db_cache.set_prices('AAPL', prices)
 
-# 存储财务指标数据
+# 获取财务指标数据（同时会保存三张财务报表数据）
 metrics = get_financial_metrics('AAPL')
-db_cache.set_financial_metrics('AAPL', metrics)
 
 # 存储公司新闻数据
 news = get_company_news('AAPL', '2023-12-31', '2023-01-01')
@@ -89,11 +95,14 @@ db_cache.set_insider_trades('AAPL', trades)
 # 查询价格数据
 prices = db.get_prices('AAPL', '2023-01-01', '2023-12-31')
 
-# 查询财务指标数据
-metrics = db.get_financial_metrics('AAPL')
+# 查询利润表数据
+income_stmt = db.get_income_statement_annual('AAPL')
 
-# 查询财务项目数据
-items = db.get_line_items('AAPL', item_names=['revenue', 'net_income'])
+# 查询资产负债表数据
+balance_sheet = db.get_balance_sheet_annual('AAPL')
+
+# 查询现金流量表数据
+cash_flow = db.get_cash_flow_annual('AAPL')
 
 # 查询内部交易数据
 trades = db.get_insider_trades('AAPL', '2023-01-01', '2023-12-31')
@@ -156,8 +165,10 @@ python src/tools/db_cli.py info --info-type ticker --ticker AAPL
 # 查询价格数据
 python src/tools/db_cli.py query --query-type prices --ticker AAPL --start-date 2023-01-01 --end-date 2023-12-31 --plot
 
-# 查询财务指标数据
-python src/tools/db_cli.py query --query-type metrics --ticker AAPL
+# 查询财务报表数据
+python src/tools/db_cli.py query --query-type income-statement --ticker AAPL
+python src/tools/db_cli.py query --query-type balance-sheet --ticker AAPL
+python src/tools/db_cli.py query --query-type cash-flow --ticker AAPL
 
 # 查询新闻数据
 python src/tools/db_cli.py query --query-type news --ticker AAPL
@@ -171,6 +182,33 @@ python src/tools/db_cli.py query --query-type correlation --tickers AAPL,MSFT,GO
 # 执行自定义SQL查询
 python src/tools/db_cli.py query --query-type custom --sql "SELECT * FROM prices WHERE ticker = 'AAPL' ORDER BY time DESC LIMIT 10"
 ```
+
+## 单元测试
+
+项目提供了一个单元测试脚本，用于测试 `get_financial_metrics` 函数的功能：
+
+```bash
+# 基本测试，不删除数据库和缓存
+python src/tools/unit_test_api.py
+
+# 使用不同的股票代码
+python src/tools/unit_test_api.py --ticker MSFT
+
+# 在测试前删除数据库文件
+python src/tools/unit_test_api.py --delete-db
+
+# 在测试前删除缓存文件
+python src/tools/unit_test_api.py --delete-cache
+
+# 在测试前同时删除数据库和缓存文件（推荐用于完整测试）
+python src/tools/unit_test_api.py --delete-db --delete-cache
+```
+
+测试脚本会：
+1. 调用 `get_financial_metrics` 函数获取指定股票的财务指标
+2. 打印获取到的财务指标数据
+3. 检查三张财务报表是否被正确保存到数据库
+4. 检查 JSON 缓存文件是否被正确创建
 
 ## 示例脚本
 
@@ -188,6 +226,7 @@ python src/examples/db_example.py
 
 ```python
 from src.data.database import Database
+from pathlib import Path
 
 # 创建自定义路径的数据库实例
 custom_db = Database(db_path=Path("path/to/your/database.db"))

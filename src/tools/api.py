@@ -341,11 +341,21 @@ def get_prices(ticker: str, start_date: str, end_date: str = None) -> list:
 def calculate_growth(df: pd.DataFrame, column_name: str) -> float:
     """计算增长率, 用于收入、净利润、股东权益等数据"""
     try:
-        if column_name not in df.columns or len(df) < 2:
+        if column_name not in df.columns.tolist() or len(df) < 2:
             return 0
-        current = float(df[column_name].iloc[0])
-        previous = float(df[column_name].iloc[1])
-        return (current - previous) / previous if previous != 0 else 0
+        current_series = df[column_name].iloc[0]
+        previous_series = df[column_name].iloc[1]
+        
+        if pd.isna(current_series) or pd.isna(previous_series):
+            return 0
+            
+        current = float(current_series)
+        previous = float(previous_series)
+        
+        if previous == 0:
+            return 0
+            
+        return (current - previous) / previous
     except Exception as e:
         print(f"Error calculating growth for {column_name}: {str(e)}")
         return 0
@@ -356,8 +366,8 @@ def get_financial_metrics(ticker: str, end_date: str = None, period: str = "ttm"
     通过 FundamentalData 接口获取公司概览、年报数据，并计算各项财务比率和增长率。
     返回的列表中包含一个支持 model_dump() 方法的 Metrics 对象。
     
-    首先尝试从SQLite数据库获取数据，如果数据库中有数据则直接返回，
-    如果没有或需要刷新，则从API获取并更新数据库。
+    同时保存三张财务报表（利润表、资产负债表、现金流量表）的完整数据到数据库和JSON文件中。
+    每次调用时，会重新计算财务指标，而不是从数据库中获取。
     """
     # 获取数据库缓存实例
     db_cache = get_db_cache()
@@ -366,40 +376,85 @@ def get_financial_metrics(ticker: str, end_date: str = None, period: str = "ttm"
     # 构建缓存参数
     cache_params = {'end': end_date, 'period': period}
     
-    # 尝试从数据库获取
-    db_data = db.get_financial_metrics(ticker)
-    if db_data and len(db_data) > 0 and not should_refresh_financial_data(ticker, end_date):
-        print(f"从数据库获取 {ticker} 的财务指标数据")
-        
-        # 转换为MetricsWrapper对象
-        result = []
-        for item in db_data:
-            if not isinstance(item, MetricsWrapper):
-                item = MetricsWrapper(item)
-            result.append(item)
-        
-        return result
-    
-    # 如果数据库中没有数据或需要刷新，则从API获取
     try:
         # 检查 API 请求限制
         check_rate_limit()
         
-        overview, _ = fd.get_company_overview(symbol=ticker)
-        
-        check_rate_limit()
-        income_stmt, _ = fd.get_income_statement_annual(symbol=ticker)
-        
-        check_rate_limit()
-        balance_sheet, _ = fd.get_balance_sheet_annual(symbol=ticker)
-        
-        check_rate_limit()
-        cash_flow, _ = fd.get_cash_flow_annual(symbol=ticker)
-        
+        # 获取公司概览数据
         try:
-            operating_cash = float(cash_flow["operatingCashflow"].iloc[0])
-            capex = float(cash_flow["capitalExpenditures"].iloc[0])
-            shares = float(overview["SharesOutstanding"].iloc[0])
+            overview, _ = fd.get_company_overview(symbol=ticker)
+            if len(overview.index) == 0:
+                raise ValueError("Empty overview data")
+        except Exception as e:
+            print(f"Error getting company overview: {str(e)}")
+            overview = pd.DataFrame()
+        
+        # 获取并保存利润表（年报）数据
+        check_rate_limit()
+        try:
+            income_stmt, _ = fd.get_income_statement_annual(symbol=ticker)
+            if len(income_stmt.index) == 0:
+                raise ValueError("Empty income statement data")
+        except Exception as e:
+            print(f"Error getting income statement: {str(e)}")
+            income_stmt = pd.DataFrame()
+        
+        # 保存利润表数据到数据库和JSON文件
+        if len(income_stmt.index) > 0:
+            income_stmt_dict = income_stmt.to_dict('records')
+            db_cache.set_income_statement_annual(ticker, income_stmt_dict)
+            save_to_file_cache('income_statement_annual', ticker, income_stmt_dict, cache_params)
+            print(f"已保存 {ticker} 的利润表（年报）数据，共 {len(income_stmt)} 条记录")
+        
+        # 获取并保存资产负债表（年报）数据
+        check_rate_limit()
+        try:
+            balance_sheet, _ = fd.get_balance_sheet_annual(symbol=ticker)
+            if len(balance_sheet.index) == 0:
+                raise ValueError("Empty balance sheet data")
+        except Exception as e:
+            print(f"Error getting balance sheet: {str(e)}")
+            balance_sheet = pd.DataFrame()
+        
+        # 保存资产负债表数据到数据库和JSON文件
+        if len(balance_sheet.index) > 0:
+            balance_sheet_dict = balance_sheet.to_dict('records')
+            db_cache.set_balance_sheet_annual(ticker, balance_sheet_dict)
+            save_to_file_cache('balance_sheet_annual', ticker, balance_sheet_dict, cache_params)
+            print(f"已保存 {ticker} 的资产负债表（年报）数据，共 {len(balance_sheet)} 条记录")
+        
+        # 获取并保存现金流量表（年报）数据
+        check_rate_limit()
+        try:
+            cash_flow, _ = fd.get_cash_flow_annual(symbol=ticker)
+            if len(cash_flow.index) == 0:
+                raise ValueError("Empty cash flow data")
+        except Exception as e:
+            print(f"Error getting cash flow: {str(e)}")
+            cash_flow = pd.DataFrame()
+        
+        # 保存现金流量表数据到数据库和JSON文件
+        if len(cash_flow.index) > 0:
+            cash_flow_dict = cash_flow.to_dict('records')
+            db_cache.set_cash_flow_annual(ticker, cash_flow_dict)
+            save_to_file_cache('cash_flow_annual', ticker, cash_flow_dict, cache_params)
+            print(f"已保存 {ticker} 的现金流量表（年报）数据，共 {len(cash_flow)} 条记录")
+        
+        # 计算财务指标
+        try:
+            operating_cash = 0
+            capex = 0
+            shares = 0
+            
+            if "operatingCashflow" in cash_flow.columns and len(cash_flow.index) > 0:
+                operating_cash = float(cash_flow["operatingCashflow"].iloc[0])
+            
+            if "capitalExpenditures" in cash_flow.columns and len(cash_flow.index) > 0:
+                capex = float(cash_flow["capitalExpenditures"].iloc[0])
+            
+            if "SharesOutstanding" in overview.columns and len(overview.index) > 0:
+                shares = float(overview["SharesOutstanding"].iloc[0])
+            
             free_cash_flow = operating_cash - capex
             free_cash_flow_per_share = free_cash_flow / shares if shares != 0 else 0
         except Exception as e:
@@ -408,31 +463,35 @@ def get_financial_metrics(ticker: str, end_date: str = None, period: str = "ttm"
         
         # 获取财报日期
         report_date = None
-        if "fiscalDateEnding" in income_stmt.columns:
+        if "fiscalDateEnding" in income_stmt.columns and len(income_stmt.index) > 0:
             report_date = income_stmt["fiscalDateEnding"].iloc[0]
         
+        # Helper function to extract scalar value from a Series
+        def get_scalar(series):
+            val = series.iloc[0]
+            if isinstance(val, pd.DataFrame) or isinstance(val, pd.Series):
+                return val.item()
+            return val
+
+        # 计算财务指标
         metrics_data = {
-            "return_on_equity": float(overview["ReturnOnEquityTTM"].iloc[0]) if "ReturnOnEquityTTM" in overview.columns else 0,
-            "net_margin": float(overview["ProfitMargin"].iloc[0]) if "ProfitMargin" in overview.columns else 0,
-            "operating_margin": float(overview["OperatingMarginTTM"].iloc[0]) if "OperatingMarginTTM" in overview.columns else 0,
-            "revenue_growth": calculate_growth(income_stmt, "totalRevenue") if "totalRevenue" in income_stmt.columns else 0,
-            "earnings_growth": calculate_growth(income_stmt, "netIncome") if "netIncome" in income_stmt.columns else 0,
-            "book_value_growth": calculate_growth(balance_sheet, "totalStockholdersEquity") if "totalStockholdersEquity" in balance_sheet.columns else 0,
-            "current_ratio": float(overview["CurrentRatio"].iloc[0]) if "CurrentRatio" in overview.columns else 0,
-            "debt_to_equity": float(overview["DebtToEquityRatio"].iloc[0]) if "DebtToEquityRatio" in overview.columns else 0,
-            "price_to_earnings_ratio": float(overview["PERatio"].iloc[0]) if "PERatio" in overview.columns else 0,
-            "price_to_book_ratio": float(overview["PriceToBookRatio"].iloc[0]) if "PriceToBookRatio" in overview.columns else 0,
-            "price_to_sales_ratio": float(overview["PriceToSalesRatioTTM"].iloc[0]) if "PriceToSalesRatioTTM" in overview.columns else 0,
-            "earnings_per_share": float(overview["EPS"].iloc[0]) if "EPS" in overview.columns else 0,
+            "return_on_equity": float(overview["ReturnOnEquityTTM"].iloc[0]) if "ReturnOnEquityTTM" in overview.columns and len(overview.index) > 0 else 0,
+            "net_margin": float(overview["ProfitMargin"].iloc[0]) if "ProfitMargin" in overview.columns and len(overview.index) > 0 else 0,
+            "operating_margin": float(overview["OperatingMarginTTM"].iloc[0]) if "OperatingMarginTTM" in overview.columns and len(overview.index) > 0 else 0,
+            "revenue_growth": calculate_growth(income_stmt, "totalRevenue") if "totalRevenue" in income_stmt.columns and len(income_stmt.index) > 0 else 0,
+            "earnings_growth": calculate_growth(income_stmt, "netIncome") if "netIncome" in income_stmt.columns and len(income_stmt.index) > 0 else 0,
+            "book_value_growth": calculate_growth(balance_sheet, "totalStockholdersEquity") if "totalStockholdersEquity" in balance_sheet.columns and len(balance_sheet.index) > 0 else 0,
+            "current_ratio": float(overview["CurrentRatio"].iloc[0]) if "CurrentRatio" in overview.columns and len(overview.index) > 0 else 0,
+            "debt_to_equity": float(overview["DebtToEquityRatio"].iloc[0]) if "DebtToEquityRatio" in overview.columns and len(overview.index) > 0 else 0,
+            "price_to_earnings_ratio": float(overview["PERatio"].iloc[0]) if "PERatio" in overview.columns and len(overview.index) > 0 else 0,
+            "price_to_book_ratio": float(overview["PriceToBookRatio"].iloc[0]) if "PriceToBookRatio" in overview.columns and len(overview.index) > 0 else 0,
+            "price_to_sales_ratio": float(overview["PriceToSalesRatioTTM"].iloc[0]) if "PriceToSalesRatioTTM" in overview.columns and len(overview.index) > 0 else 0,
+            "earnings_per_share": float(overview["EPS"].iloc[0]) if "EPS" in overview.columns and len(overview.index) > 0 else 0,
             "free_cash_flow_per_share": free_cash_flow_per_share,
             "report_period": report_date or datetime.now().strftime('%Y-%m-%d')
         }
         metrics = MetricsWrapper(metrics_data)
         result = [metrics]
-        
-        # 保存到缓存
-        cache.set_financial_metrics(ticker, result)
-        save_to_file_cache('financial_metrics', ticker, result, cache_params)
         
         return result
     except Exception as e:
@@ -477,8 +536,7 @@ def search_line_items(ticker: str, line_items: list, end_date: str = None, perio
     函数从年报数据中抽取所需的项目（如自由现金流、净利润、收入、经营利润率等），
     返回包含属性访问的 FinancialData 对象列表。
     
-    首先尝试从SQLite数据库获取数据，如果数据库中有数据则直接返回，
-    如果没有或需要刷新，则从API获取并更新数据库。
+    直接从API获取数据，不再依赖已删除的line_items表。
     """
     # 获取数据库缓存实例
     db_cache = get_db_cache()
@@ -486,31 +544,6 @@ def search_line_items(ticker: str, line_items: list, end_date: str = None, perio
     
     # 构建缓存参数
     cache_params = {'end': end_date, 'period': period, 'items': '_'.join(line_items)}
-    
-    # 尝试从数据库获取
-    db_data = db.get_line_items(ticker, item_names=line_items)
-    if db_data and len(db_data) > 0 and not should_refresh_financial_data(ticker, end_date):
-        # 检查是否包含所有需要的项目
-        all_items_present = True
-        for item in db_data:
-            for line_item in line_items:
-                if line_item not in item:
-                    all_items_present = False
-                    break
-            if not all_items_present:
-                break
-        
-        if all_items_present:
-            print(f"从数据库获取 {ticker} 的财报项目数据")
-            
-            # 转换为MetricsWrapper对象
-            result = []
-            for item in db_data[:limit]:
-                if not isinstance(item, MetricsWrapper):
-                    item = MetricsWrapper(item)
-                result.append(item)
-            
-            return result
     
     # 如果数据库中没有数据或需要刷新，则从API获取
     try:
@@ -532,19 +565,19 @@ def search_line_items(ticker: str, line_items: list, end_date: str = None, perio
             data = {}
             
             # 获取财报日期
-            if "fiscalDateEnding" in income_stmt.columns:
+            if "fiscalDateEnding" in income_stmt.columns.tolist():
                 data["report_period"] = income_stmt["fiscalDateEnding"].iloc[i]
             else:
                 data["report_period"] = datetime.now().strftime('%Y-%m-%d')
             for item in line_items:
                 mapped_item = FIELD_MAPPING.get(item, item)
-                if mapped_item in income_stmt.columns:
+                if mapped_item in income_stmt.columns.tolist():
                     data[item] = float(income_stmt[mapped_item].iloc[i])
-                elif mapped_item in balance_sheet.columns:
+                elif mapped_item in balance_sheet.columns.tolist():
                     data[item] = float(balance_sheet[mapped_item].iloc[i])
-                elif mapped_item in cash_flow.columns:
+                elif mapped_item in cash_flow.columns.tolist():
                     data[item] = float(cash_flow[mapped_item].iloc[i])
-                elif mapped_item in overview.columns:
+                elif mapped_item in overview.columns.tolist():
                     data[item] = float(overview[mapped_item].iloc[0])
                 elif item == "free_cash_flow":
                     try:
@@ -556,11 +589,11 @@ def search_line_items(ticker: str, line_items: list, end_date: str = None, perio
                     try:
                         net_income = float(income_stmt["netIncome"].iloc[i])
                         shares = 0
-                        if "commonStockSharesOutstanding" in balance_sheet.columns:
+                        if "commonStockSharesOutstanding" in balance_sheet.columns.tolist():
                             shares = float(balance_sheet["commonStockSharesOutstanding"].iloc[i])
                         else:
                             overview, _ = fd.get_company_overview(symbol=ticker)
-                            if "SharesOutstanding" in overview.columns:
+                            if "SharesOutstanding" in overview.columns.tolist():
                                 shares = float(overview["SharesOutstanding"].iloc[0])
                         data[item] = net_income / shares if shares != 0 else 0
                     except Exception as e:
@@ -570,7 +603,7 @@ def search_line_items(ticker: str, line_items: list, end_date: str = None, perio
                     try:
                         equity = float(balance_sheet["totalShareholderEquity"].iloc[i])
                         shares = 0
-                        if "commonStockSharesOutstanding" in balance_sheet.columns:
+                        if "commonStockSharesOutstanding" in balance_sheet.columns.tolist():
                             shares = float(balance_sheet["commonStockSharesOutstanding"].iloc[i])
                         data[item] = equity / shares if shares != 0 else 0
                     except Exception as e:
@@ -610,12 +643,12 @@ def search_line_items(ticker: str, line_items: list, end_date: str = None, perio
                         data[item] = 0
                 elif item == "revenue":
                     try:
-                        data[item] = float(income_stmt["totalRevenue"].iloc[i]) if "totalRevenue" in income_stmt.columns else 0
+                        data[item] = float(income_stmt["totalRevenue"].iloc[i]) if "totalRevenue" in income_stmt.columns.tolist() else 0
                     except Exception as e:
                         print(f"Error processing {item}: {str(e)}")
                         data[item] = 0
                 elif item == "operating_margin":
-                    if "OperatingMarginTTM" in overview.columns:
+                    if "OperatingMarginTTM" in overview.columns.tolist():
                         data[item] = float(overview["OperatingMarginTTM"].iloc[0])
                 elif item == "debt_to_equity":
                     try:
@@ -627,13 +660,13 @@ def search_line_items(ticker: str, line_items: list, end_date: str = None, perio
                         data[item] = 0
                 elif item == "total_assets":
                     try:
-                        data[item] = float(balance_sheet["totalAssets"].iloc[i]) if "totalAssets" in balance_sheet.columns else 0
+                        data[item] = float(balance_sheet["totalAssets"].iloc[i]) if "totalAssets" in balance_sheet.columns.tolist() else 0
                     except Exception as e:
                         print(f"Error processing {item}: {str(e)}")
                         data[item] = 0
                 elif item == "total_liabilities":
                     try:
-                        data[item] = float(balance_sheet["totalLiabilities"].iloc[i]) if "totalLiabilities" in balance_sheet.columns else 0
+                        data[item] = float(balance_sheet["totalLiabilities"].iloc[i]) if "totalLiabilities" in balance_sheet.columns.tolist() else 0
                     except Exception as e:
                         print(f"Error processing {item}: {str(e)}")
                         data[item] = 0
@@ -642,10 +675,10 @@ def search_line_items(ticker: str, line_items: list, end_date: str = None, perio
                 # 添加缺失的项目处理
                 elif item == "outstanding_shares":
                     try:
-                        if "commonStockSharesOutstanding" in balance_sheet.columns:
+                        if "commonStockSharesOutstanding" in balance_sheet.columns.tolist():
                             data[item] = float(balance_sheet["commonStockSharesOutstanding"].iloc[i])
                         else:
-                            if "SharesOutstanding" in overview.columns:
+                            if "SharesOutstanding" in overview.columns.tolist():
                                 data[item] = float(overview["SharesOutstanding"].iloc[0])
                             else:
                                 data[item] = 0
@@ -654,9 +687,9 @@ def search_line_items(ticker: str, line_items: list, end_date: str = None, perio
                         data[item] = 0
                 elif item == "operating_income":
                     try:
-                        if "operatingIncome" in income_stmt.columns:
+                        if "operatingIncome" in income_stmt.columns.tolist():
                             data[item] = float(income_stmt["operatingIncome"].iloc[i])
-                        elif "totalRevenue" in income_stmt.columns and "operatingExpenses" in income_stmt.columns:
+                        elif "totalRevenue" in income_stmt.columns.tolist() and "operatingExpenses" in income_stmt.columns.tolist():
                             revenue = float(income_stmt["totalRevenue"].iloc[i])
                             operating_expenses = float(income_stmt["operatingExpenses"].iloc[i])
                             data[item] = revenue - operating_expenses
@@ -667,7 +700,7 @@ def search_line_items(ticker: str, line_items: list, end_date: str = None, perio
                         data[item] = 0
                 elif item == "return_on_invested_capital":
                     try:
-                        if "netIncome" in income_stmt.columns and "totalAssets" in balance_sheet.columns and "totalCurrentLiabilities" in balance_sheet.columns:
+                        if "netIncome" in income_stmt.columns.tolist() and "totalAssets" in balance_sheet.columns.tolist() and "totalCurrentLiabilities" in balance_sheet.columns.tolist():
                             net_income = float(income_stmt["netIncome"].iloc[i])
                             total_assets = float(balance_sheet["totalAssets"].iloc[i])
                             current_liabilities = float(balance_sheet["totalCurrentLiabilities"].iloc[i])
@@ -680,9 +713,9 @@ def search_line_items(ticker: str, line_items: list, end_date: str = None, perio
                         data[item] = 0
                 elif item == "cash_and_equivalents":
                     try:
-                        if "cashAndCashEquivalentsAtCarryingValue" in balance_sheet.columns:
+                        if "cashAndCashEquivalentsAtCarryingValue" in balance_sheet.columns.tolist():
                             data[item] = float(balance_sheet["cashAndCashEquivalentsAtCarryingValue"].iloc[i])
-                        elif "cashAndShortTermInvestments" in balance_sheet.columns:
+                        elif "cashAndShortTermInvestments" in balance_sheet.columns.tolist():
                             data[item] = float(balance_sheet["cashAndShortTermInvestments"].iloc[i])
                         else:
                             data[item] = 0
@@ -691,21 +724,21 @@ def search_line_items(ticker: str, line_items: list, end_date: str = None, perio
                         data[item] = 0
                 elif item == "total_debt":
                     try:
-                        if "shortLongTermDebtTotal" in balance_sheet.columns:
+                        if "shortLongTermDebtTotal" in balance_sheet.columns.tolist():
                             data[item] = float(balance_sheet["shortLongTermDebtTotal"].iloc[i])
                         else:
-                            short_term_debt = float(balance_sheet["shortTermDebt"].iloc[i]) if "shortTermDebt" in balance_sheet.columns else 0
-                            long_term_debt = float(balance_sheet["longTermDebt"].iloc[i]) if "longTermDebt" in balance_sheet.columns else 0
-                            current_long_term_debt = float(balance_sheet["currentLongTermDebt"].iloc[i]) if "currentLongTermDebt" in balance_sheet.columns else 0
+                            short_term_debt = float(balance_sheet["shortTermDebt"].iloc[i]) if "shortTermDebt" in balance_sheet.columns.tolist() else 0
+                            long_term_debt = float(balance_sheet["longTermDebt"].iloc[i]) if "longTermDebt" in balance_sheet.columns.tolist() else 0
+                            current_long_term_debt = float(balance_sheet["currentLongTermDebt"].iloc[i]) if "currentLongTermDebt" in balance_sheet.columns.tolist() else 0
                             data[item] = short_term_debt + long_term_debt + current_long_term_debt
                     except Exception as e:
                         print(f"Error processing {item}: {str(e)}")
                         data[item] = 0
                 elif item == "shareholders_equity":
                     try:
-                        if "totalShareholderEquity" in balance_sheet.columns:
+                        if "totalShareholderEquity" in balance_sheet.columns.tolist():
                                                         data[item] = float(balance_sheet["totalShareholderEquity"].iloc[i])
-                        elif "totalStockholdersEquity" in balance_sheet.columns:
+                        elif "totalStockholdersEquity" in balance_sheet.columns.tolist():
                             data[item] = float(balance_sheet["totalStockholdersEquity"].iloc[i])
                         else:
                             data[item] = 0
@@ -714,11 +747,11 @@ def search_line_items(ticker: str, line_items: list, end_date: str = None, perio
                         data[item] = 0
                 elif item == "operating_expense":
                     try:
-                        if "operatingExpenses" in income_stmt.columns:
+                        if "operatingExpenses" in income_stmt.columns.tolist():
                             data[item] = float(income_stmt["operatingExpenses"].iloc[i])
-                        elif "totalOperatingExpenses" in income_stmt.columns:
+                        elif "totalOperatingExpenses" in income_stmt.columns.tolist():
                             data[item] = float(income_stmt["totalOperatingExpenses"].iloc[i])
-                        elif "totalRevenue" in income_stmt.columns and "operatingIncome" in income_stmt.columns:
+                        elif "totalRevenue" in income_stmt.columns.tolist() and "operatingIncome" in income_stmt.columns.tolist():
                             revenue = float(income_stmt["totalRevenue"].iloc[i])
                             op_income = float(income_stmt["operatingIncome"].iloc[i])
                             data[item] = revenue - op_income
@@ -739,7 +772,7 @@ def search_line_items(ticker: str, line_items: list, end_date: str = None, perio
                 elif item == "ebitda":
                     try:
                         # 直接从 overview 获取
-                        if "EBITDA" in overview.columns:
+                        if "EBITDA" in overview.columns.tolist():
                             data[item] = float(overview["EBITDA"].iloc[0])
                         else:
                             data[item] = 0
@@ -751,11 +784,11 @@ def search_line_items(ticker: str, line_items: list, end_date: str = None, perio
                     try:
                         goodwill = 0
                         intangible_assets = 0
-                        if "goodwill" in balance_sheet.columns:
+                        if "goodwill" in balance_sheet.columns.tolist():
                             goodwill_val = balance_sheet["goodwill"].iloc[i]
                             if goodwill_val and goodwill_val != 'None':
                                 goodwill = float(goodwill_val)
-                        if "intangibleAssets" in balance_sheet.columns:
+                        if "intangibleAssets" in balance_sheet.columns.tolist():
                             intangible_val = balance_sheet["intangibleAssets"].iloc[i]
                             if intangible_val and intangible_val != 'None':
                                 intangible_assets = float(intangible_val)
@@ -765,12 +798,12 @@ def search_line_items(ticker: str, line_items: list, end_date: str = None, perio
                         data[item] = 0
                 elif item == "gross_margin":
                     try:
-                        total_revenue = float(income_stmt["totalRevenue"].iloc[i]) if "totalRevenue" in income_stmt.columns else 0
+                        total_revenue = float(income_stmt["totalRevenue"].iloc[i]) if "totalRevenue" in income_stmt.columns.tolist() else 0
                         if total_revenue:
-                            if "grossProfit" in income_stmt.columns:
+                            if "grossProfit" in income_stmt.columns.tolist():
                                 gross_profit = float(income_stmt["grossProfit"].iloc[i])
                                 data[item] = gross_profit / total_revenue
-                            elif "costOfRevenue" in income_stmt.columns:
+                            elif "costOfRevenue" in income_stmt.columns.tolist():
                                 cost_rev = float(income_stmt["costOfRevenue"].iloc[i])
                                 data[item] = (total_revenue - cost_rev) / total_revenue
                             else:
@@ -782,9 +815,9 @@ def search_line_items(ticker: str, line_items: list, end_date: str = None, perio
                         data[item] = 0
                 elif item == "research_and_development":
                     try:
-                        if "researchAndDevelopment" in income_stmt.columns:
+                        if "researchAndDevelopment" in income_stmt.columns.tolist():
                             data[item] = float(income_stmt["researchAndDevelopment"].iloc[i])
-                        elif "researchAndDevelopmentExpense" in income_stmt.columns:
+                        elif "researchAndDevelopmentExpense" in income_stmt.columns.tolist():
                             data[item] = float(income_stmt["researchAndDevelopmentExpense"].iloc[i])
                         else:
                             data[item] = 0

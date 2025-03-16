@@ -6,24 +6,35 @@ from datetime import datetime
 from pathlib import Path
 import pandas as pd
 
+# 使用线程本地存储
+_thread_local = threading.local()
+
+def get_db():
+    """获取数据库连接，确保每个线程使用自己的连接"""
+    if not hasattr(_thread_local, 'db'):
+        # 为当前线程创建新的数据库连接
+        db_path = Path("src/data/finance.db")
+        _thread_local.db = Database(db_path)
+        print(f"为线程 {threading.get_ident()} 创建新的数据库连接")
+    return _thread_local.db
+
 # 数据库文件路径
 DB_PATH = Path("src/data/finance.db")
 
 class Database:
     """SQLite数据库管理类，用于存储股票金融数据"""
 
-    def __init__(self, db_path=DB_PATH):
-        """初始化数据库连接并创建表结构"""
+    def __init__(self, db_path):
+        """初始化数据库连接"""
         self.db_path = db_path
-        # 确保数据库目录存在
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        
-        # 创建数据库连接
-        self.conn = sqlite3.connect(str(self.db_path))
-        self.conn.row_factory = sqlite3.Row  # 使查询结果可以通过列名访问
-        
-        # 创建表结构
+        self.conn = None
+        self._connect()
         self._create_tables()
+
+    def _connect(self):
+        """连接到数据库"""
+        self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
+        self.conn.row_factory = sqlite3.Row
     
     def _create_tables(self):
         """创建数据库表结构"""
@@ -47,68 +58,123 @@ class Database:
         )
         ''')
         
-        # 创建财务指标表
+        # 创建利润表（年报）
         cursor.execute('''
-        CREATE TABLE IF NOT EXISTS financial_metrics (
+        CREATE TABLE IF NOT EXISTS income_statement_annual (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             ticker TEXT NOT NULL,
-            report_period TEXT NOT NULL,
-            period TEXT,
-            currency TEXT,
-            market_cap REAL,
-            enterprise_value REAL,
-            price_to_earnings_ratio REAL,
-            price_to_book_ratio REAL,
-            price_to_sales_ratio REAL,
-            enterprise_value_to_ebitda_ratio REAL,
-            enterprise_value_to_revenue_ratio REAL,
-            free_cash_flow_yield REAL,
-            peg_ratio REAL,
-            gross_margin REAL,
-            operating_margin REAL,
-            net_margin REAL,
-            return_on_equity REAL,
-            return_on_assets REAL,
-            return_on_invested_capital REAL,
-            asset_turnover REAL,
-            inventory_turnover REAL,
-            receivables_turnover REAL,
-            days_sales_outstanding REAL,
-            operating_cycle REAL,
-            working_capital_turnover REAL,
-            current_ratio REAL,
-            quick_ratio REAL,
-            cash_ratio REAL,
-            operating_cash_flow_ratio REAL,
-            debt_to_equity REAL,
-            debt_to_assets REAL,
-            interest_coverage REAL,
-            revenue_growth REAL,
-            earnings_growth REAL,
-            book_value_growth REAL,
-            earnings_per_share_growth REAL,
-            free_cash_flow_growth REAL,
-            operating_income_growth REAL,
-            ebitda_growth REAL,
-            payout_ratio REAL,
-            earnings_per_share REAL,
-            book_value_per_share REAL,
-            free_cash_flow_per_share REAL,
-            UNIQUE(ticker, report_period)
+            fiscalDateEnding TEXT NOT NULL,
+            reportedCurrency TEXT,
+            grossProfit REAL,
+            totalRevenue REAL,
+            costOfRevenue REAL,
+            costofGoodsAndServicesSold REAL,
+            operatingIncome REAL,
+            sellingGeneralAndAdministrative REAL,
+            researchAndDevelopment REAL,
+            operatingExpenses REAL,
+            investmentIncomeNet REAL,
+            netInterestIncome REAL,
+            interestIncome REAL,
+            interestExpense REAL,
+            nonInterestIncome REAL,
+            otherNonOperatingIncome REAL,
+            depreciation REAL,
+            depreciationAndAmortization REAL,
+            incomeBeforeTax REAL,
+            incomeTaxExpense REAL,
+            interestAndDebtExpense REAL,
+            netIncomeFromContinuingOperations REAL,
+            comprehensiveIncomeNetOfTax REAL,
+            ebit REAL,
+            ebitda REAL,
+            netIncome REAL,
+            UNIQUE(ticker, fiscalDateEnding)
         )
         ''')
         
-        # 创建财务项目表 (动态字段)
+        # 创建资产负债表（年报）
         cursor.execute('''
-        CREATE TABLE IF NOT EXISTS line_items (
+        CREATE TABLE IF NOT EXISTS balance_sheet_annual (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             ticker TEXT NOT NULL,
-            report_period TEXT NOT NULL,
-            period TEXT,
-            currency TEXT,
-            item_name TEXT NOT NULL,
-            item_value REAL,
-            UNIQUE(ticker, report_period, item_name)
+            fiscalDateEnding TEXT NOT NULL,
+            reportedCurrency TEXT,
+            totalAssets REAL,
+            totalCurrentAssets REAL,
+            cashAndCashEquivalentsAtCarryingValue REAL,
+            cashAndShortTermInvestments REAL,
+            inventory REAL,
+            currentNetReceivables REAL,
+            totalNonCurrentAssets REAL,
+            propertyPlantEquipment REAL,
+            accumulatedDepreciationAmortizationPPE REAL,
+            intangibleAssets REAL,
+            intangibleAssetsExcludingGoodwill REAL,
+            goodwill REAL,
+            investments REAL,
+            longTermInvestments REAL,
+            shortTermInvestments REAL,
+            otherCurrentAssets REAL,
+            otherNonCurrentAssets REAL,
+            totalLiabilities REAL,
+            totalCurrentLiabilities REAL,
+            currentAccountsPayable REAL,
+            deferredRevenue REAL,
+            currentDebt REAL,
+            shortTermDebt REAL,
+            totalNonCurrentLiabilities REAL,
+            capitalLeaseObligations REAL,
+            longTermDebt REAL,
+            currentLongTermDebt REAL,
+            longTermDebtNoncurrent REAL,
+            shortLongTermDebtTotal REAL,
+            otherCurrentLiabilities REAL,
+            otherNonCurrentLiabilities REAL,
+            totalShareholderEquity REAL,
+            treasuryStock REAL,
+            retainedEarnings REAL,
+            commonStock REAL,
+            commonStockSharesOutstanding REAL,
+            UNIQUE(ticker, fiscalDateEnding)
+        )
+        ''')
+        
+        # 创建现金流量表（年报）
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS cash_flow_annual (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ticker TEXT NOT NULL,
+            fiscalDateEnding TEXT NOT NULL,
+            reportedCurrency TEXT,
+            operatingCashflow REAL,
+            paymentsForOperatingActivities REAL,
+            proceedsFromOperatingActivities REAL,
+            changeInOperatingLiabilities REAL,
+            changeInOperatingAssets REAL,
+            depreciationDepletionAndAmortization REAL,
+            capitalExpenditures REAL,
+            changeInReceivables REAL,
+            changeInInventory REAL,
+            profitLoss REAL,
+            cashflowFromInvestment REAL,
+            cashflowFromFinancing REAL,
+            proceedsFromRepaymentsOfShortTermDebt REAL,
+            paymentsForRepurchaseOfCommonStock REAL,
+            paymentsForRepurchaseOfEquity REAL,
+            paymentsForRepurchaseOfPreferredStock REAL,
+            dividendPayout REAL,
+            dividendPayoutCommonStock REAL,
+            dividendPayoutPreferredStock REAL,
+            proceedsFromIssuanceOfCommonStock REAL,
+            proceedsFromIssuanceOfLongTermDebtAndCapitalSecuritiesNet REAL,
+            proceedsFromIssuanceOfPreferredStock REAL,
+            proceedsFromRepurchaseOfEquity REAL,
+            proceedsFromSaleOfTreasuryStock REAL,
+            changeInCashAndCashEquivalents REAL,
+            changeInExchangeRate REAL,
+            netIncome REAL,
+            UNIQUE(ticker, fiscalDateEnding)
         )
         ''')
         
@@ -258,26 +324,24 @@ class Database:
         
         return result
     
-    # 财务指标方法
-    def set_financial_metrics(self, ticker, data):
-        """存储财务指标数据"""
+    # 利润表（年报）方法
+    def set_income_statement_annual(self, ticker, data):
+        """存储年度利润表数据"""
         cursor = self.conn.cursor()
         
-        for item in data:
-            # 获取item的数据，支持字典和对象两种情况
-            if hasattr(item, 'model_dump'):
-                item_data = item.model_dump()
-            elif hasattr(item, '__dict__'):
-                item_data = item.__dict__
-            else:
-                item_data = item
-            
+        # 如果data是pandas DataFrame，转换为字典列表
+        if hasattr(data, 'to_dict'):
+            data_list = data.to_dict('records')
+        else:
+            data_list = data
+        
+        for item in data_list:
             # 准备插入的字段
             fields = ['ticker']
             values = [ticker]
             
             # 动态添加其他字段
-            for key, value in item_data.items():
+            for key, value in item.items():
                 fields.append(key)
                 values.append(value)
             
@@ -286,27 +350,27 @@ class Database:
             fields_str = ', '.join(fields)
             
             # 使用INSERT OR REPLACE确保唯一性
-            sql = f"INSERT OR REPLACE INTO financial_metrics ({fields_str}) VALUES ({placeholders})"
+            sql = f"INSERT OR REPLACE INTO income_statement_annual ({fields_str}) VALUES ({placeholders})"
             
             try:
                 cursor.execute(sql, values)
             except Exception as e:
-                print(f"Error inserting financial metrics: {e}")
+                print(f"Error inserting income statement annual: {e}")
         
         self.conn.commit()
     
-    def get_financial_metrics(self, ticker, report_period=None):
-        """获取财务指标数据"""
+    def get_income_statement_annual(self, ticker, fiscal_date_ending=None):
+        """获取年度利润表数据"""
         cursor = self.conn.cursor()
         
-        sql = "SELECT * FROM financial_metrics WHERE ticker = ?"
+        sql = "SELECT * FROM income_statement_annual WHERE ticker = ?"
         params = [ticker]
         
-        if report_period:
-            sql += " AND report_period = ?"
-            params.append(report_period)
+        if fiscal_date_ending:
+            sql += " AND fiscalDateEnding = ?"
+            params.append(fiscal_date_ending)
         
-        sql += " ORDER BY report_period DESC"
+        sql += " ORDER BY fiscalDateEnding DESC"
         
         cursor.execute(sql, params)
         rows = cursor.fetchall()
@@ -319,85 +383,123 @@ class Database:
         
         return result
     
-    # 财务项目方法
-    def set_line_items(self, ticker, data):
-        """存储财务项目数据"""
+    # 资产负债表（年报）方法
+    def set_balance_sheet_annual(self, ticker, data):
+        """存储年度资产负债表数据"""
         cursor = self.conn.cursor()
         
-        for item in data:
-            # 获取item的数据，支持字典和对象两种情况
-            if hasattr(item, 'model_dump'):
-                item_data = item.model_dump()
-            elif hasattr(item, '__dict__'):
-                item_data = item.__dict__
-            else:
-                item_data = item
+        # 如果data是pandas DataFrame，转换为字典列表
+        if hasattr(data, 'to_dict'):
+            data_list = data.to_dict('records')
+        else:
+            data_list = data
+        
+        for item in data_list:
+            # 准备插入的字段
+            fields = ['ticker']
+            values = [ticker]
             
-            # 获取基本信息
-            report_period = item_data.get('report_period', datetime.now().strftime('%Y-%m-%d'))
-            period = item_data.get('period', 'ttm')
-            currency = item_data.get('currency', 'USD')
+            # 动态添加其他字段
+            for key, value in item.items():
+                fields.append(key)
+                values.append(value)
             
-            # 遍历所有项目，存储为单独的记录
-            for key, value in item_data.items():
-                # 跳过基本信息字段
-                if key in ['report_period', 'period', 'currency']:
-                    continue
-                
-                # 插入数据
-                sql = """
-                INSERT OR REPLACE INTO line_items 
-                (ticker, report_period, period, currency, item_name, item_value) 
-                VALUES (?, ?, ?, ?, ?, ?)
-                """
-                
-                try:
-                    cursor.execute(sql, [ticker, report_period, period, currency, key, value])
-                except Exception as e:
-                    print(f"Error inserting line item: {e}")
+            # 构建SQL语句
+            placeholders = ', '.join(['?'] * len(fields))
+            fields_str = ', '.join(fields)
+            
+            # 使用INSERT OR REPLACE确保唯一性
+            sql = f"INSERT OR REPLACE INTO balance_sheet_annual ({fields_str}) VALUES ({placeholders})"
+            
+            try:
+                cursor.execute(sql, values)
+            except Exception as e:
+                print(f"Error inserting balance sheet annual: {e}")
         
         self.conn.commit()
     
-    def get_line_items(self, ticker, report_period=None, item_names=None):
-        """获取财务项目数据"""
+    def get_balance_sheet_annual(self, ticker, fiscal_date_ending=None):
+        """获取年度资产负债表数据"""
         cursor = self.conn.cursor()
         
-        sql = "SELECT * FROM line_items WHERE ticker = ?"
+        sql = "SELECT * FROM balance_sheet_annual WHERE ticker = ?"
         params = [ticker]
         
-        if report_period:
-            sql += " AND report_period = ?"
-            params.append(report_period)
+        if fiscal_date_ending:
+            sql += " AND fiscalDateEnding = ?"
+            params.append(fiscal_date_ending)
         
-        if item_names:
-            placeholders = ', '.join(['?'] * len(item_names))
-            sql += f" AND item_name IN ({placeholders})"
-            params.extend(item_names)
-        
-        sql += " ORDER BY report_period DESC, item_name"
+        sql += " ORDER BY fiscalDateEnding DESC"
         
         cursor.execute(sql, params)
         rows = cursor.fetchall()
         
-        # 转换为按报告期分组的字典
-        result = {}
+        # 转换为字典列表
+        result = []
         for row in rows:
-            row_dict = dict(row)
-            period = row_dict['report_period']
-            
-            if period not in result:
-                result[period] = {
-                    'ticker': ticker,
-                    'report_period': period,
-                    'period': row_dict['period'],
-                    'currency': row_dict['currency']
-                }
-            
-            # 添加项目值
-            result[period][row_dict['item_name']] = row_dict['item_value']
+            item = dict(row)
+            result.append(item)
         
-        # 转换为列表
-        return list(result.values())
+        return result
+    
+    # 现金流量表（年报）方法
+    def set_cash_flow_annual(self, ticker, data):
+        """存储年度现金流量表数据"""
+        cursor = self.conn.cursor()
+        
+        # 如果data是pandas DataFrame，转换为字典列表
+        if hasattr(data, 'to_dict'):
+            data_list = data.to_dict('records')
+        else:
+            data_list = data
+        
+        for item in data_list:
+            # 准备插入的字段
+            fields = ['ticker']
+            values = [ticker]
+            
+            # 动态添加其他字段
+            for key, value in item.items():
+                fields.append(key)
+                values.append(value)
+            
+            # 构建SQL语句
+            placeholders = ', '.join(['?'] * len(fields))
+            fields_str = ', '.join(fields)
+            
+            # 使用INSERT OR REPLACE确保唯一性
+            sql = f"INSERT OR REPLACE INTO cash_flow_annual ({fields_str}) VALUES ({placeholders})"
+            
+            try:
+                cursor.execute(sql, values)
+            except Exception as e:
+                print(f"Error inserting cash flow annual: {e}")
+        
+        self.conn.commit()
+    
+    def get_cash_flow_annual(self, ticker, fiscal_date_ending=None):
+        """获取年度现金流量表数据"""
+        cursor = self.conn.cursor()
+        
+        sql = "SELECT * FROM cash_flow_annual WHERE ticker = ?"
+        params = [ticker]
+        
+        if fiscal_date_ending:
+            sql += " AND fiscalDateEnding = ?"
+            params.append(fiscal_date_ending)
+        
+        sql += " ORDER BY fiscalDateEnding DESC"
+        
+        cursor.execute(sql, params)
+        rows = cursor.fetchall()
+        
+        # 转换为字典列表
+        result = []
+        for row in rows:
+            item = dict(row)
+            result.append(item)
+        
+        return result
     
     # 内部交易方法
     def set_insider_trades(self, ticker, data):
@@ -666,7 +768,10 @@ class Database:
 _thread_local = threading.local()
 
 def get_db():
-    """获取当前线程的数据库实例"""
+    """获取数据库连接，确保每个线程使用自己的连接"""
     if not hasattr(_thread_local, 'db'):
-        _thread_local.db = Database()
+        # 为当前线程创建新的数据库连接
+        db_path = Path("src/data/finance.db")
+        _thread_local.db = Database(db_path)
+        print(f"为线程 {threading.get_ident()} 创建新的数据库连接")
     return _thread_local.db
