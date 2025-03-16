@@ -60,13 +60,9 @@ def check_rate_limit():
     request_timestamps.append(time.time())
 
 def get_cache_path(cache_type, ticker, params=None):
-    """获取缓存文件路径"""
-    if params:
-        # 将参数转换为字符串用于文件名
-        params_str = "_".join(f"{k}_{v}" for k, v in sorted(params.items()) if v is not None)
-        filename = f"{ticker}_{params_str}.json"
-    else:
-        filename = f"{ticker}.json"
+    """获取缓存文件路径，确保文件名格式为 {股票名}_{YYYYMMDD}.json"""
+    today_str = datetime.now().strftime('%Y%m%d')
+    filename = f"{ticker}_{today_str}.json"
     
     return CACHE_DIR / cache_type / filename
 
@@ -99,6 +95,10 @@ def save_to_file_cache(cache_type, ticker, data, params=None):
             # 其他情况直接保存
             serialized_data = data
         
+        # 确保覆盖旧文件
+        if cache_path.exists():
+            cache_path.unlink()
+
         with open(cache_path, 'w', encoding='utf-8') as f:
             json.dump(serialized_data, f, ensure_ascii=False, default=str)
         
@@ -115,10 +115,30 @@ def load_from_file_cache(cache_type, ticker, params=None, max_age_days=30):
     if not cache_path.exists():
         return None
     
-    # 检查缓存文件是否过期
+    # 检查缓存文件是否为当前日期
+    today_str = datetime.now().strftime('%Y%m%d')
+    if today_str in cache_path.name:
+        print(f"使用当前日期的缓存文件 {cache_path}")
+        with open(cache_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+            # 根据缓存类型处理数据
+            if cache_type == 'financial_metrics':
+                return [MetricsWrapper(item) for item in data]
+            elif cache_type == 'line_items':
+                return [MetricsWrapper(item) for item in data]
+            elif cache_type == 'insider_trades':
+                # 创建具有属性访问的对象
+                return [type('InsiderTrade', (), item if isinstance(item, dict) else {'error': 'Invalid data format'})() for item in data]
+            elif cache_type == 'company_news':
+                # 创建 CompanyNews 对象
+                return [CompanyNews(**item) for item in data]
+            else:
+                return data
+
+    # 如果缓存文件过期，则返回 None
     file_age = (datetime.now() - datetime.fromtimestamp(cache_path.stat().st_mtime)).days
     if file_age > max_age_days:
-        print(f"缓存文件 {cache_path} 已过期 ({file_age} 天)")
+        print(f"缓存文件 {cache_path} 已过期 ({file_age} 天)，重新获取数据")
         return None
     
     try:
@@ -869,23 +889,14 @@ class MetricsWrapper:
 class CompanyNews:
     """
     封装 Alpha Vantage 新闻数据，使新闻项支持属性访问。
-    例如，可以使用 news.sentiment 访问新闻情感数据。
-    """
-    def __init__(self, **kwargs):
-        self.__dict__.update(kwargs)
-    def model_dump(self):
-        return self.__dict__
-
-class CompanyNews:
-    """
-    封装 Alpha Vantage 新闻数据，使新闻项支持属性访问。
     映射字段说明：
       - time_published 映射为 date（仅保留日期部分）
       - overall_sentiment_score 映射为 sentiment（转换为 float 类型）
+      - title 确保存在，默认为空字符串
     例如，可以使用 news.sentiment 访问新闻情感数据，使用 news.date 进行日期过滤。
     """
     def __init__(self, **kwargs):
-        # 将 time_published 映射为 date（只取日期部分，“T”或空格分隔）
+        # 将 time_published 映射为 date（只取日期部分，"T"或空格分隔）
         tp = kwargs.get("time_published", "")
         if tp:
             if "T" in tp:
@@ -900,8 +911,10 @@ class CompanyNews:
             self.sentiment = float(s) if s is not None else None
         except Exception:
             self.sentiment = None
-        # 将其他属性也添加进来，但不覆盖已有的 date 与 sentiment
-        temp = {k: v for k, v in kwargs.items() if k not in ["time_published", "overall_sentiment_score"]}
+        # 确保title属性存在
+        self.title = kwargs.get("title", "")
+        # 将其他属性也添加进来，但不覆盖已有的 date、sentiment 和 title
+        temp = {k: v for k, v in kwargs.items() if k not in ["time_published", "overall_sentiment_score", "title"]}
         self.__dict__.update(temp)
     def model_dump(self):
         return self.__dict__
@@ -945,6 +958,8 @@ def get_company_news(ticker: str, end_date: str, start_date: str = None, limit: 
             filtered_data.append(news)
         
         if filtered_data:
+            # 确保所有数据都是 CompanyNews 实例
+            filtered_data = [CompanyNews(**item) if isinstance(item, dict) else item for item in filtered_data]
             # 根据 limit 参数截取结果列表
             if limit and len(filtered_data) > limit:
                 filtered_data = filtered_data[:limit]
@@ -954,6 +969,8 @@ def get_company_news(ticker: str, end_date: str, start_date: str = None, limit: 
     # 尝试从文件缓存获取
     file_cached_data = load_from_file_cache('company_news', ticker, cache_params)
     if file_cached_data:
+        # 确保所有数据都是 CompanyNews 实例
+        file_cached_data = [CompanyNews(**item) if isinstance(item, dict) else item for item in file_cached_data]
         # 更新内存缓存
         cache.set_company_news(ticker, file_cached_data)
         print(f"从文件缓存获取 {ticker} 的公司新闻数据")
@@ -967,9 +984,9 @@ def get_company_news(ticker: str, end_date: str, start_date: str = None, limit: 
         time_from = None
         time_to = None
         if start_date and end_date:
-            # 将 "YYYY-MM-DD" 格式转换为 "YYYYMMDDT0000" 和 "YYYYMMDDT2359"
-            time_from = f"{start_date.replace('-', '')}T0000"
-            time_to = f"{end_date.replace('-', '')}T2359"
+            # 统一使用美东时间上午 9:30
+            time_from = f"{start_date.replace('-', '')}T0930"
+            time_to = f"{end_date.replace('-', '')}T0930"
 
         url = "https://www.alphavantage.co/query"
         params = {
@@ -983,10 +1000,10 @@ def get_company_news(ticker: str, end_date: str, start_date: str = None, limit: 
             params["time_from"] = time_from
         if time_to:
             params["time_to"] = time_to
-
         response = requests.get(url, params=params)
         json_data = response.json()
-        if "feed" in json_data and json_data["feed"]:
+        
+        if json_data and "feed" in json_data:
             news_items = [CompanyNews(**item) for item in json_data["feed"]]
             
             # 保存到缓存
