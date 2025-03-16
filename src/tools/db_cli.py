@@ -37,7 +37,12 @@ def fetch_data(args):
     if args.start_date:
         start_date = args.start_date
     else:
-        start_date = (datetime.strptime(end_date, '%Y-%m-%d') - timedelta(days=365)).strftime('%Y-%m-%d')
+        # 对于价格数据，默认获取所有历史数据
+        if args.data_type in ['all', 'prices']:
+            start_date = "full"
+        else:
+            # 对于其他类型的数据，默认获取一年的数据
+            start_date = (datetime.strptime(end_date, '%Y-%m-%d') - timedelta(days=365)).strftime('%Y-%m-%d')
     
     # 获取股票列表
     tickers = args.tickers.split(',')
@@ -49,9 +54,40 @@ def fetch_data(args):
         # 获取价格数据
         if args.data_type in ['all', 'prices']:
             print(f"获取 {ticker} 的价格数据...")
-            prices = get_prices(ticker, start_date, end_date)
-            db_cache.set_prices(ticker, prices)
-            print(f"已存储 {len(prices)} 条价格记录")
+            
+            # 检查当前是否为周末，且请求的是最新数据
+            current_date = datetime.now().date()
+            is_weekend = current_date.weekday() >= 5  # 5是周六，6是周日
+            
+            # 获取数据库中最新的日期
+            db = get_db()
+            db_data = db.get_prices(ticker)
+            if db_data and len(db_data) > 0:
+                db_latest_date = max(item['time'] for item in db_data)
+                db_latest_datetime = datetime.strptime(db_latest_date, '%Y-%m-%d').date()
+                is_db_friday = db_latest_datetime.weekday() == 4  # 4是周五
+                
+                # 如果当前是周末，且数据库最新日期是周五，且相差不超过2天，则不需要更新
+                if is_weekend and is_db_friday and (current_date - db_latest_datetime).days <= 2:
+                    print(f"当前是周末（{current_date}），数据库最新日期为周五（{db_latest_date}），无需更新")
+                    # 直接从数据库获取数据
+                    if start_date == "full":
+                        # 如果start_date是"full"，则获取所有历史数据
+                        prices = db_data
+                    else:
+                        # 否则根据日期范围过滤
+                        prices = [item for item in db_data if item['time'] >= start_date and (not end_date or item['time'] <= end_date)]
+                    print(f"从数据库获取 {len(prices)} 条价格记录")
+                else:
+                    # 正常获取数据
+                    prices = get_prices(ticker, start_date, end_date)
+                    db_cache.set_prices(ticker, prices)
+                    print(f"已存储 {len(prices)} 条价格记录")
+            else:
+                # 数据库中没有数据，正常获取
+                prices = get_prices(ticker, start_date, end_date)
+                db_cache.set_prices(ticker, prices)
+                print(f"已存储 {len(prices)} 条价格记录")
         
         # 获取财务指标数据
         if args.data_type in ['all', 'metrics']:
@@ -240,7 +276,7 @@ def main():
     # fetch命令
     fetch_parser = subparsers.add_parser('fetch', help='获取并存储股票数据')
     fetch_parser.add_argument('--tickers', required=True, help='股票代码列表，用逗号分隔')
-    fetch_parser.add_argument('--start-date', help='起始日期 (YYYY-MM-DD)')
+    fetch_parser.add_argument('--start-date', help='起始日期 (YYYY-MM-DD 或 "full" 表示获取所有历史数据)')
     fetch_parser.add_argument('--end-date', help='结束日期 (YYYY-MM-DD)')
     fetch_parser.add_argument('--data-type', choices=['all', 'prices', 'metrics', 'news', 'trades'], default='all', help='数据类型')
     

@@ -210,6 +210,8 @@ def get_prices(ticker: str, start_date: str, end_date: str = None) -> list:
     
     首先尝试从SQLite数据库获取数据，如果数据库中有数据则直接返回，
     如果没有或数据不完整，则从API获取并更新数据库。
+    
+    特殊用法：当 start_date 为 "full" 时，将获取并返回所有可用的历史数据，不进行日期过滤。
     """
     # 获取数据库缓存实例
     db_cache = get_db_cache()
@@ -232,10 +234,33 @@ def get_prices(ticker: str, start_date: str, end_date: str = None) -> list:
         # 获取数据库中最新的日期
         db_latest_date = max(item['time'] for item in db_data) if db_data else None
         
-        # 如果数据库中的最新日期小于请求的最新日期，则需要更新数据
+        # 判断是否需要更新数据（考虑交易日）
+        need_update = False
         if db_latest_date and db_latest_date < latest_date:
-            print(f"数据库中最新日期为 {db_latest_date}，需要更新到 {latest_date}")
+            # 获取当前日期或指定的结束日期
+            if end_date:
+                current_date = datetime.strptime(end_date, '%Y-%m-%d').date()
+            else:
+                current_date = datetime.now().date()
             
+            # 获取数据库最新日期
+            db_latest_datetime = datetime.strptime(db_latest_date, '%Y-%m-%d').date()
+            
+            # 判断当前是否为周末
+            is_weekend = current_date.weekday() >= 5  # 5是周六，6是周日
+            
+            # 判断数据库最新日期是否为周五
+            is_db_friday = db_latest_datetime.weekday() == 4  # 4是周五
+            
+            # 如果当前是周末，且数据库最新日期是周五，则不需要更新
+            if is_weekend and is_db_friday and (current_date - db_latest_datetime).days <= 2:
+                print(f"当前是周末（{current_date}），数据库最新日期为周五（{db_latest_date}），无需更新")
+                need_update = False
+            else:
+                print(f"数据库中最新日期为 {db_latest_date}，需要更新到 {latest_date}")
+                need_update = True
+        
+        if need_update:
             # 设置新的起始日期为数据库中最新日期的后一天
             new_start_date = (datetime.strptime(db_latest_date, '%Y-%m-%d') + timedelta(days=1)).strftime('%Y-%m-%d')
             
@@ -289,10 +314,14 @@ def get_prices(ticker: str, start_date: str, end_date: str = None) -> list:
         # 将日期转换为字符串格式（如 'YYYY-MM-DD'）
         data['time'] = data['time'].dt.strftime('%Y-%m-%d')
         # 过滤指定的日期范围
-        mask = (data['time'] >= start_date)
-        if end_date:
-            mask &= (data['time'] <= end_date)
-        filtered_data = data.loc[mask]
+        if start_date == "full":
+            # 如果 start_date 为 "full"，不进行日期过滤，返回所有数据
+            filtered_data = data
+        else:
+            mask = (data['time'] >= start_date)
+            if end_date:
+                mask &= (data['time'] <= end_date)
+            filtered_data = data.loc[mask]
         result = filtered_data.to_dict('records')
         
         if result:
