@@ -1,5 +1,8 @@
 class Cache:
-    """In-memory cache for API responses."""
+    """In-memory cache for API responses.
+    
+    注意：此类仅提供内存缓存功能，持久化存储请使用DBCache类。
+    """
 
     def __init__(self):
         self._prices_cache: dict[str, list[dict[str, any]]] = {}
@@ -108,5 +111,8 @@ _cache = Cache()
 
 
 def get_cache() -> Cache:
-    """Get the global cache instance."""
+    """Get the global cache instance.
+    
+    注意：此函数返回的是内存缓存实例，如需持久化存储，请使用 get_db_cache() 函数。
+    """
     return _cache

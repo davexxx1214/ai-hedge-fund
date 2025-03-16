@@ -12,8 +12,10 @@ from pathlib import Path
 from alpha_vantage.timeseries import TimeSeries
 from alpha_vantage.fundamentaldata import FundamentalData
 
-# 获取缓存实例
+# 获取缓存实例和数据库实例
 from src.data.cache import get_cache
+from src.data.db_cache import get_db_cache
+from src.data.database import get_db
 
 # 创建本地文件缓存目录
 CACHE_DIR = Path("src/data/cache_files")
@@ -205,29 +207,76 @@ def get_prices(ticker: str, start_date: str, end_date: str = None) -> list:
     返回的数据列表中，每个记录包含字段：
     time, open, high, low, close, adjusted_close, volume, dividend_amount, split_coefficient
     注意：这里将原来的"date"字段改为"time"，以便与后续转换保持一致。
+    
+    首先尝试从SQLite数据库获取数据，如果数据库中有数据则直接返回，
+    如果没有或数据不完整，则从API获取并更新数据库。
     """
+    # 获取数据库缓存实例
+    db_cache = get_db_cache()
+    db = get_db()
+    
     # 构建缓存参数
     cache_params = {'start': start_date, 'end': end_date}
     
-    # 尝试从内存缓存获取
-    cached_data = cache.get_prices(ticker)
-    if cached_data:
+    # 尝试从数据库获取
+    db_data = db.get_prices(ticker, start_date, end_date)
+    if db_data and len(db_data) > 0:
+        print(f"从数据库获取 {ticker} 的价格数据")
+        
+        # 检查数据是否完整（是否包含最新日期的数据）
+        if end_date:
+            latest_date = end_date
+        else:
+            latest_date = datetime.now().strftime('%Y-%m-%d')
+        
+        # 获取数据库中最新的日期
+        db_latest_date = max(item['time'] for item in db_data) if db_data else None
+        
+        # 如果数据库中的最新日期小于请求的最新日期，则需要更新数据
+        if db_latest_date and db_latest_date < latest_date:
+            print(f"数据库中最新日期为 {db_latest_date}，需要更新到 {latest_date}")
+            
+            # 设置新的起始日期为数据库中最新日期的后一天
+            new_start_date = (datetime.strptime(db_latest_date, '%Y-%m-%d') + timedelta(days=1)).strftime('%Y-%m-%d')
+            
+            # 从API获取增量数据
+            try:
+                # 检查 API 请求限制
+                check_rate_limit()
+                
+                data, meta_data = ts.get_daily_adjusted(symbol=ticker, outputsize="full")
+                data = data.reset_index()
+                # 重命名列，使得第一列为 time（日期）
+                data.columns = ['time', 'open', 'high', 'low', 'close', 'adjusted_close', 
+                                'volume', 'dividend_amount', 'split_coefficient']
+                # 将日期转换为字符串格式（如 'YYYY-MM-DD'）
+                data['time'] = data['time'].dt.strftime('%Y-%m-%d')
+                
+                # 只获取新的数据（数据库中最新日期之后的数据）
+                mask = (data['time'] > db_latest_date)
+                if end_date:
+                    mask &= (data['time'] <= end_date)
+                
+                new_data = data.loc[mask].to_dict('records')
+                
+                if new_data:
+                    print(f"从API获取到 {len(new_data)} 条新的价格数据")
+                    # 更新数据库
+                    db_cache.set_prices(ticker, new_data)
+                    
+                    # 合并旧数据和新数据
+                    db_data.extend(new_data)
+                    
+                    # 按日期排序
+                    db_data.sort(key=lambda x: x['time'])
+            except Exception as e:
+                print(f"更新价格数据时出错: {str(e)}")
+        
         # 过滤日期范围
-        filtered_data = [item for item in cached_data if item['time'] >= start_date and (not end_date or item['time'] <= end_date)]
-        if filtered_data:
-            print(f"从内存缓存获取 {ticker} 的价格数据")
-            return filtered_data
+        filtered_data = [item for item in db_data if item['time'] >= start_date and (not end_date or item['time'] <= end_date)]
+        return filtered_data
     
-    # 尝试从文件缓存获取
-    file_cached_data = load_from_file_cache('prices', ticker, cache_params)
-    if file_cached_data:
-        # 更新内存缓存
-        if isinstance(file_cached_data, list) and len(file_cached_data) > 0:
-            cache.set_prices(ticker, file_cached_data)
-        print(f"从文件缓存获取 {ticker} 的价格数据")
-        return file_cached_data
-    
-    # 如果缓存中没有，则从 API 获取
+    # 如果数据库中没有数据，则从API获取
     try:
         # 检查 API 请求限制
         check_rate_limit()
@@ -246,9 +295,14 @@ def get_prices(ticker: str, start_date: str, end_date: str = None) -> list:
         filtered_data = data.loc[mask]
         result = filtered_data.to_dict('records')
         
-        # 保存到缓存
-        cache.set_prices(ticker, result)
-        save_to_file_cache('prices', ticker, result, cache_params)
+        if result:
+            print(f"从API获取到 {len(result)} 条价格数据")
+            # 保存到数据库
+            db_cache.set_prices(ticker, result)
+            
+            # 同时保存到内存缓存和文件缓存（向后兼容）
+            cache.set_prices(ticker, result)
+            save_to_file_cache('prices', ticker, result, cache_params)
         
         return result
     except Exception as e:
@@ -272,25 +326,32 @@ def get_financial_metrics(ticker: str, end_date: str = None, period: str = "ttm"
 
     通过 FundamentalData 接口获取公司概览、年报数据，并计算各项财务比率和增长率。
     返回的列表中包含一个支持 model_dump() 方法的 Metrics 对象。
+    
+    首先尝试从SQLite数据库获取数据，如果数据库中有数据则直接返回，
+    如果没有或需要刷新，则从API获取并更新数据库。
     """
+    # 获取数据库缓存实例
+    db_cache = get_db_cache()
+    db = get_db()
+    
     # 构建缓存参数
     cache_params = {'end': end_date, 'period': period}
     
-    # 尝试从内存缓存获取
-    cached_data = cache.get_financial_metrics(ticker)
-    if cached_data:
-        print(f"从内存缓存获取 {ticker} 的财务指标数据")
-        return cached_data
+    # 尝试从数据库获取
+    db_data = db.get_financial_metrics(ticker)
+    if db_data and len(db_data) > 0 and not should_refresh_financial_data(ticker, end_date):
+        print(f"从数据库获取 {ticker} 的财务指标数据")
+        
+        # 转换为MetricsWrapper对象
+        result = []
+        for item in db_data:
+            if not isinstance(item, MetricsWrapper):
+                item = MetricsWrapper(item)
+            result.append(item)
+        
+        return result
     
-    # 尝试从文件缓存获取
-    file_cached_data = load_from_file_cache('financial_metrics', ticker, cache_params)
-    if file_cached_data and not should_refresh_financial_data(ticker, end_date):
-        # 更新内存缓存
-        cache.set_financial_metrics(ticker, file_cached_data)
-        print(f"从文件缓存获取 {ticker} 的财务指标数据")
-        return file_cached_data
-    
-    # 如果缓存中没有或需要刷新，则从 API 获取
+    # 如果数据库中没有数据或需要刷新，则从API获取
     try:
         # 检查 API 请求限制
         check_rate_limit()
@@ -386,36 +447,43 @@ def search_line_items(ticker: str, line_items: list, end_date: str = None, perio
 
     函数从年报数据中抽取所需的项目（如自由现金流、净利润、收入、经营利润率等），
     返回包含属性访问的 FinancialData 对象列表。
+    
+    首先尝试从SQLite数据库获取数据，如果数据库中有数据则直接返回，
+    如果没有或需要刷新，则从API获取并更新数据库。
     """
+    # 获取数据库缓存实例
+    db_cache = get_db_cache()
+    db = get_db()
+    
     # 构建缓存参数
     cache_params = {'end': end_date, 'period': period, 'items': '_'.join(line_items)}
     
-    # 尝试从内存缓存获取
-    cached_data = cache.get_line_items(ticker)
-    if cached_data:
+    # 尝试从数据库获取
+    db_data = db.get_line_items(ticker, item_names=line_items)
+    if db_data and len(db_data) > 0 and not should_refresh_financial_data(ticker, end_date):
         # 检查是否包含所有需要的项目
         all_items_present = True
-        for item in cached_data:
+        for item in db_data:
             for line_item in line_items:
-                if not hasattr(item, line_item):
+                if line_item not in item:
                     all_items_present = False
                     break
             if not all_items_present:
                 break
         
         if all_items_present:
-            print(f"从内存缓存获取 {ticker} 的财报项目数据")
-            return cached_data[:limit]
+            print(f"从数据库获取 {ticker} 的财报项目数据")
+            
+            # 转换为MetricsWrapper对象
+            result = []
+            for item in db_data[:limit]:
+                if not isinstance(item, MetricsWrapper):
+                    item = MetricsWrapper(item)
+                result.append(item)
+            
+            return result
     
-    # 尝试从文件缓存获取
-    file_cached_data = load_from_file_cache('line_items', ticker, cache_params)
-    if file_cached_data and not should_refresh_financial_data(ticker, end_date):
-        # 更新内存缓存
-        cache.set_line_items(ticker, file_cached_data)
-        print(f"从文件缓存获取 {ticker} 的财报项目数据")
-        return file_cached_data[:limit]
-    
-    # 如果缓存中没有或需要刷新，则从 API 获取
+    # 如果数据库中没有数据或需要刷新，则从API获取
     try:
         # 检查 API 请求限制
         check_rate_limit()
@@ -714,41 +782,121 @@ def get_insider_trades(ticker: str, end_date: str, start_date: str = None, limit
       end_date    - 截止日期（格式：YYYY-MM-DD）
       start_date  - 起始日期（格式：YYYY-MM-DD），若为 None，则不过滤起始日期
       limit       - 返回的记录条数上限，默认为 1000（在满足条件的数据中截取）
+      
+    首先尝试从SQLite数据库获取数据，如果数据库中有数据则直接返回，
+    如果没有，则从API获取并更新数据库。
     """
+    # 获取数据库缓存实例
+    db_cache = get_db_cache()
+    db = get_db()
+    
     # 构建缓存参数
     cache_params = {'start': start_date, 'end': end_date, 'limit': limit}
     
-    # 尝试从内存缓存获取
-    cached_data = cache.get_insider_trades(ticker)
-    if cached_data:
-        # 过滤日期范围
-        filtered_data = []
-        for trade in cached_data:
-            trade_date = getattr(trade, 'date', '')
-            if not trade_date:
-                continue
-            if start_date and trade_date < start_date:
-                continue
-            if end_date and trade_date > end_date:
-                continue
-            filtered_data.append(trade)
+    # 尝试从数据库获取
+    db_data = db.get_insider_trades(ticker, start_date, end_date)
+    if db_data and len(db_data) > 0:
+        print(f"从数据库获取 {ticker} 的内部交易数据")
         
-        if filtered_data:
-            # 根据 limit 参数截取结果列表
-            if limit and len(filtered_data) > limit:
-                filtered_data = filtered_data[:limit]
-            print(f"从内存缓存获取 {ticker} 的内部交易数据")
-            return filtered_data
+        # 检查数据是否完整（是否包含最新日期的数据）
+        if end_date:
+            latest_date = end_date
+        else:
+            latest_date = datetime.now().strftime('%Y-%m-%d')
+        
+        # 获取数据库中最新的日期
+        db_latest_date = max(item.get('date', '') for item in db_data) if db_data else None
+        
+        # 如果数据库中的最新日期小于请求的最新日期，则需要更新数据
+        if db_latest_date and db_latest_date < latest_date:
+            print(f"数据库中最新日期为 {db_latest_date}，需要更新到 {latest_date}")
+            
+            # 设置新的起始日期为数据库中最新日期的后一天
+            new_start_date = (datetime.strptime(db_latest_date, '%Y-%m-%d') + timedelta(days=1)).strftime('%Y-%m-%d')
+            
+            # 从API获取增量数据
+            try:
+                # 检查 API 请求限制
+                check_rate_limit()
+                
+                url = f'https://www.alphavantage.co/query?function=INSIDER_TRANSACTIONS&symbol={ticker}&apikey={ALPHA_VANTAGE_API_KEY}'
+                response = requests.get(url)
+                data = response.json()
+                
+                if data and 'data' in data:
+                    trades = data['data']
+                    new_trades = []
+                    
+                    # 遍历所有返回的内部交易记录
+                    for trade in trades:
+                        transaction_date = trade.get('transaction_date', '')
+                        # 如果交易日期为空，则跳过该条记录
+                        if not transaction_date:
+                            continue
+                        # 只获取新的数据（数据库中最新日期之后的数据）
+                        if transaction_date <= db_latest_date:
+                            continue
+                        if end_date and transaction_date > end_date:
+                            continue
+                        
+                        try:
+                            is_sale = (trade.get('acquisition_or_disposal', '') == 'D')
+                            share_price_val = trade.get('share_price', '0')
+                            share_price = float(share_price_val) if share_price_val and share_price_val != '' else 0.0
+                            shares = float(trade.get('shares', 0) or 0)
+                            filing_date = trade.get('filing_date', transaction_date)
+                            
+                            formatted_trade = type('InsiderTrade', (), {
+                                'date': transaction_date,
+                                'filing_date': filing_date,
+                                'insider_name': trade.get('executive', ''),
+                                'insider_title': trade.get('executive_title', ''),
+                                'transaction_type': 'sell' if is_sale else 'buy',
+                                'price': share_price,
+                                'transaction_shares': shares,
+                                'value': share_price * shares,
+                                'shares_owned': 0,
+                            })()
+                            new_trades.append(formatted_trade)
+                        except Exception as e:
+                            print(f"Error processing trade: {str(e)}")
+                            continue
+                    
+                    if new_trades:
+                        print(f"从API获取到 {len(new_trades)} 条新的内部交易数据")
+                        # 更新数据库
+                        db_cache.set_insider_trades(ticker, new_trades)
+                        
+                        # 将新数据添加到结果中
+                        for trade in new_trades:
+                            trade_dict = {}
+                            for attr in dir(trade):
+                                if not attr.startswith('_') and not callable(getattr(trade, attr)):
+                                    trade_dict[attr] = getattr(trade, attr)
+                            db_data.append(trade_dict)
+                        
+                        # 按日期排序
+                        db_data.sort(key=lambda x: x.get('date', ''), reverse=True)
+            except Exception as e:
+                print(f"更新内部交易数据时出错: {str(e)}")
+        
+        # 根据 limit 参数截取结果列表
+        if limit and len(db_data) > limit:
+            db_data = db_data[:limit]
+        
+        # 转换为对象
+        result = []
+        for item in db_data:
+            if not hasattr(item, 'date'):
+                # 创建具有属性访问的对象
+                trade_obj = type('InsiderTrade', (), item)()
+                result.append(trade_obj)
+            else:
+                result.append(item)
+        
+        return result
     
-    # 尝试从文件缓存获取
-    file_cached_data = load_from_file_cache('insider_trades', ticker, cache_params)
-    if file_cached_data:
-        # 更新内存缓存
-        cache.set_insider_trades(ticker, file_cached_data)
-        print(f"从文件缓存获取 {ticker} 的内部交易数据")
-        return file_cached_data
-    
-    # 如果缓存中没有，则从 API 获取
+    # 如果数据库中没有数据，则从API获取
     try:
         # 检查 API 请求限制
         check_rate_limit()
@@ -892,7 +1040,10 @@ class CompanyNews:
     映射字段说明：
       - time_published 映射为 date（仅保留日期部分）
       - overall_sentiment_score 映射为 sentiment（转换为 float 类型）
+      - overall_sentiment_label 保持原样（如"Somewhat-Bullish"）
       - title 确保存在，默认为空字符串
+      - authors 列表转换为字符串，用逗号分隔
+      - topics 列表转换为字符串，用逗号分隔
     例如，可以使用 news.sentiment 访问新闻情感数据，使用 news.date 进行日期过滤。
     """
     def __init__(self, **kwargs):
@@ -904,20 +1055,75 @@ class CompanyNews:
             else:
                 self.date = tp.split(" ")[0]
         else:
-            self.date = ""
+            # 如果没有time_published，则尝试使用date字段
+            date_str = kwargs.get("date", "")
+            # 如果date字段是格式为"YYYYMMDD"的字符串，则转换为"YYYY-MM-DD"格式
+            if date_str and len(date_str) == 8 and date_str.isdigit():
+                self.date = f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:8]}"
+            else:
+                self.date = date_str
+        
         # 将 overall_sentiment_score 映射为 sentiment，并转换为 float 类型（若无法转换则为 None）
         s = kwargs.get("overall_sentiment_score", None)
         try:
             self.sentiment = float(s) if s is not None else None
         except Exception:
-            self.sentiment = None
+            # 如果overall_sentiment_score转换失败，尝试使用sentiment字段
+            try:
+                self.sentiment = float(kwargs.get("sentiment", 0)) if kwargs.get("sentiment") is not None else None
+            except Exception:
+                self.sentiment = None
+        
+        # 处理 overall_sentiment_label 字段
+        self.overall_sentiment_label = kwargs.get("overall_sentiment_label", "")
+        
         # 确保title属性存在
         self.title = kwargs.get("title", "")
-        # 将其他属性也添加进来，但不覆盖已有的 date、sentiment 和 title
-        temp = {k: v for k, v in kwargs.items() if k not in ["time_published", "overall_sentiment_score", "title"]}
+        
+        # 处理authors字段，如果是列表则转换为字符串
+        authors = kwargs.get("authors", [])
+        if isinstance(authors, list):
+            self.author = ", ".join(authors)  # 使用author字段存储，而不是authors
+        else:
+            self.author = str(authors)
+        
+        # 处理summary字段
+        self.summary = kwargs.get("summary", "")
+        
+        # 处理banner_image字段
+        self.banner_image = kwargs.get("banner_image", "")
+        
+        # 处理source_domain字段
+        self.source_domain = kwargs.get("source_domain", "")
+        
+        # 处理category_within_source字段
+        self.category_within_source = kwargs.get("category_within_source", "")
+        
+        # 处理topics字段，如果是列表则转换为字符串
+        topics = kwargs.get("topics", [])
+        if isinstance(topics, list):
+            # 如果topics是包含字典的列表，提取topic字段
+            if topics and isinstance(topics[0], dict) and "topic" in topics[0]:
+                self.topics = ", ".join([t.get("topic", "") for t in topics])
+            else:
+                self.topics = ", ".join([str(t) for t in topics])
+        else:
+            self.topics = str(topics)
+        
+        # 将其他属性也添加进来，但不覆盖已有的特殊处理字段
+        skip_fields = ["time_published", "overall_sentiment_score", "overall_sentiment_label", "title", "authors", 
+                      "summary", "banner_image", "source_domain", "category_within_source", "topics", "ticker_sentiment"]
+        temp = {k: v for k, v in kwargs.items() if k not in skip_fields}
         self.__dict__.update(temp)
+    
     def model_dump(self):
-        return self.__dict__
+        # 确保返回的字典不包含可能导致问题的字段
+        data = self.__dict__.copy()
+        # 删除可能导致问题的字段
+        for field in ["authors", "topics", "ticker_sentiment"]:
+            if field in data:
+                del data[field]
+        return data
 
 def get_company_news(ticker: str, end_date: str, start_date: str = None, limit: int = 1000) -> list:
     """
