@@ -241,7 +241,9 @@ def get_prices(ticker: str, start_date: str, end_date: str = None) -> list:
             if end_date:
                 current_date = datetime.strptime(end_date, '%Y-%m-%d').date()
             else:
-                current_date = datetime.now().date()
+                from pytz import timezone
+                eastern = timezone('US/Eastern')
+                current_date = datetime.now(eastern).date()
             
             # 获取数据库最新日期
             db_latest_datetime = datetime.strptime(db_latest_date, '%Y-%m-%d').date()
@@ -457,9 +459,41 @@ def get_financial_metrics(ticker: str, end_date: str = None, period: str = "ttm"
             
             free_cash_flow = operating_cash - capex
             free_cash_flow_per_share = free_cash_flow / shares if shares != 0 else 0
+            
+            # 计算股权发行与回购净额
+            issuance_or_purchase_of_equity_shares = 0
+            if len(cash_flow.index) > 0:
+                # 计算股权发行净额
+                equity_issuance = 0
+                if "proceedsFromIssuanceOfCommonStock" in cash_flow.columns:
+                    common_stock_issuance = cash_flow["proceedsFromIssuanceOfCommonStock"].iloc[0]
+                    if common_stock_issuance and common_stock_issuance != 'None':
+                        equity_issuance += float(common_stock_issuance)
+                if "proceedsFromIssuanceOfPreferredStock" in cash_flow.columns:
+                    preferred_stock_issuance = cash_flow["proceedsFromIssuanceOfPreferredStock"].iloc[0]
+                    if preferred_stock_issuance and preferred_stock_issuance != 'None':
+                        equity_issuance += float(preferred_stock_issuance)
+                
+                # 计算股权回购净额
+                equity_repurchase = 0
+                if "paymentsForRepurchaseOfCommonStock" in cash_flow.columns:
+                    common_stock_repurchase = cash_flow["paymentsForRepurchaseOfCommonStock"].iloc[0]
+                    if common_stock_repurchase and common_stock_repurchase != 'None':
+                        equity_repurchase += float(common_stock_repurchase)
+                if "paymentsForRepurchaseOfEquity" in cash_flow.columns:
+                    equity_repurchase_general = cash_flow["paymentsForRepurchaseOfEquity"].iloc[0]
+                    if equity_repurchase_general and equity_repurchase_general != 'None':
+                        equity_repurchase += float(equity_repurchase_general)
+                if "paymentsForRepurchaseOfPreferredStock" in cash_flow.columns:
+                    preferred_stock_repurchase = cash_flow["paymentsForRepurchaseOfPreferredStock"].iloc[0]
+                    if preferred_stock_repurchase and preferred_stock_repurchase != 'None':
+                        equity_repurchase += float(preferred_stock_repurchase)
+                
+                # 计算净额
+                issuance_or_purchase_of_equity_shares = equity_issuance - equity_repurchase
         except Exception as e:
-            print(f"Error calculating free cash flow per share: {str(e)}")
-            free_cash_flow_per_share = 0
+            print(f"Error calculating equity issuance/repurchase: {str(e)}")
+            issuance_or_purchase_of_equity_shares = 0
         
         # 获取财报日期
         report_date = None
@@ -488,6 +522,7 @@ def get_financial_metrics(ticker: str, end_date: str = None, period: str = "ttm"
             "price_to_sales_ratio": float(overview["PriceToSalesRatioTTM"].iloc[0]) if "PriceToSalesRatioTTM" in overview.columns and len(overview.index) > 0 else 0,
             "earnings_per_share": float(overview["EPS"].iloc[0]) if "EPS" in overview.columns and len(overview.index) > 0 else 0,
             "free_cash_flow_per_share": free_cash_flow_per_share,
+            "issuance_or_purchase_of_equity_shares": issuance_or_purchase_of_equity_shares,
             "report_period": report_date or datetime.now().strftime('%Y-%m-%d')
         }
         metrics = MetricsWrapper(metrics_data)
@@ -510,6 +545,7 @@ def get_financial_metrics(ticker: str, end_date: str = None, period: str = "ttm"
             "price_to_sales_ratio": 0,
             "earnings_per_share": 0,
             "free_cash_flow_per_share": 0,
+            "issuance_or_purchase_of_equity_shares": 0,
             "report_period": datetime.now().strftime('%Y-%m-%d')
         }
         return [MetricsWrapper(default_data)]
@@ -821,6 +857,39 @@ def search_line_items(ticker: str, line_items: list, end_date: str = None, perio
                             data[item] = float(income_stmt["researchAndDevelopmentExpense"].iloc[i])
                         else:
                             data[item] = 0
+                    except Exception as e:
+                        print(f"Error processing {item}: {str(e)}")
+                        data[item] = 0
+                elif item == "issuance_or_purchase_of_equity_shares":
+                    try:
+                        # 计算股权发行净额
+                        equity_issuance = 0
+                        if "proceedsFromIssuanceOfCommonStock" in cash_flow.columns.tolist():
+                            common_stock_issuance = cash_flow["proceedsFromIssuanceOfCommonStock"].iloc[i]
+                            if common_stock_issuance and common_stock_issuance != 'None':
+                                equity_issuance += float(common_stock_issuance)
+                        if "proceedsFromIssuanceOfPreferredStock" in cash_flow.columns.tolist():
+                            preferred_stock_issuance = cash_flow["proceedsFromIssuanceOfPreferredStock"].iloc[i]
+                            if preferred_stock_issuance and preferred_stock_issuance != 'None':
+                                equity_issuance += float(preferred_stock_issuance)
+                        
+                        # 计算股权回购净额
+                        equity_repurchase = 0
+                        if "paymentsForRepurchaseOfCommonStock" in cash_flow.columns.tolist():
+                            common_stock_repurchase = cash_flow["paymentsForRepurchaseOfCommonStock"].iloc[i]
+                            if common_stock_repurchase and common_stock_repurchase != 'None':
+                                equity_repurchase += float(common_stock_repurchase)
+                        if "paymentsForRepurchaseOfEquity" in cash_flow.columns.tolist():
+                            equity_repurchase_general = cash_flow["paymentsForRepurchaseOfEquity"].iloc[i]
+                            if equity_repurchase_general and equity_repurchase_general != 'None':
+                                equity_repurchase += float(equity_repurchase_general)
+                        if "paymentsForRepurchaseOfPreferredStock" in cash_flow.columns.tolist():
+                            preferred_stock_repurchase = cash_flow["paymentsForRepurchaseOfPreferredStock"].iloc[i]
+                            if preferred_stock_repurchase and preferred_stock_repurchase != 'None':
+                                equity_repurchase += float(preferred_stock_repurchase)
+                        
+                        # 计算净额
+                        data[item] = equity_issuance - equity_repurchase
                     except Exception as e:
                         print(f"Error processing {item}: {str(e)}")
                         data[item] = 0
