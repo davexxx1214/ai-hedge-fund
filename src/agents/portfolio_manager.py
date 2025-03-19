@@ -189,8 +189,8 @@ Inputs:
                   "TICKER1": {{
                     "action": "buy/sell/short/cover/hold",
                     "quantity": integer,
-                    "confidence": float,
-                    "reasoning": "请用中文解释你的决策理由"
+                    "confidence": float between 0 and 100,
+                    "reasoning": "string"
                   }},
                   "TICKER2": {{
                     ...
