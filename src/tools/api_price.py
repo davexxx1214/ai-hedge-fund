@@ -2,7 +2,8 @@
 价格相关API功能
 """
 import pandas as pd
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, time
+from pytz import timezone
 
 from src.tools.api_base import ts, check_rate_limit
 from src.tools.api_cache import save_to_file_cache, load_from_file_cache
@@ -49,13 +50,21 @@ def get_prices(ticker: str, start_date: str, end_date: str = None) -> list:
         # 判断是否需要更新数据（考虑交易日）
         need_update = False
         if db_latest_date and db_latest_date < latest_date:
-            # 获取当前日期或指定的结束日期
+            # 获取当前日期或指定的结束日期，并确保转换为美东时间
+            eastern = timezone('US/Eastern')
             if end_date:
                 current_date = datetime.strptime(end_date, '%Y-%m-%d').date()
+                # 使用指定的结束日期时，假设是当天结束时间
+                current_datetime = datetime.combine(current_date, time(23, 59, 59)).replace(tzinfo=eastern)
             else:
-                from pytz import timezone
-                eastern = timezone('US/Eastern')
-                current_date = datetime.now(eastern).date()
+                # 获取当前时间并正确转换为美东时间
+                local_tz = timezone('Asia/Shanghai')  # 假设本地时区是东8区
+                now = datetime.now()
+                local_dt = local_tz.localize(now)
+                current_datetime = local_dt.astimezone(eastern)
+                current_date = current_datetime.date()
+            
+            print(f"当前本地时间: {now}, 转换为美东时间: {current_datetime}")
             
             # 获取数据库最新日期
             db_latest_datetime = datetime.strptime(db_latest_date, '%Y-%m-%d').date()
@@ -66,9 +75,20 @@ def get_prices(ticker: str, start_date: str, end_date: str = None) -> list:
             # 判断数据库最新日期是否为周五
             is_db_friday = db_latest_datetime.weekday() == 4  # 4是周五
             
+            # 判断当前是否在交易时间内
+            is_trading_hours = is_market_trading_hours(current_datetime)
+            print(f"当前时间: {current_datetime}，是否交易时间: {is_trading_hours}")
+            
+            # 计算工作日差距（不考虑周末）
+            business_days_diff = calculate_business_days(db_latest_datetime, current_date)
+            
             # 如果当前是周末，且数据库最新日期是周五，则不需要更新
             if is_weekend and is_db_friday and (current_date - db_latest_datetime).days <= 2:
                 print(f"当前是周末（{current_date}），数据库最新日期为周五（{db_latest_date}），无需更新")
+                need_update = False
+            # 如果当前是交易日但处于交易时间内，且数据库最新日期是最近的交易日，则不需要更新
+            elif not is_weekend and is_trading_hours and business_days_diff <= 1:
+                print(f"当前处于交易时间（{current_datetime}），数据库最新日期为{db_latest_date}，无需更新")
                 need_update = False
             else:
                 print(f"数据库中最新日期为 {db_latest_date}，需要更新到 {latest_date}")
@@ -172,6 +192,50 @@ def get_price_data(ticker: str, start_date: str, end_date: str) -> pd.DataFrame:
     """获取价格数据并转换为 DataFrame"""
     prices = get_prices(ticker, start_date, end_date)
     return prices_to_df(prices)
+
+def calculate_business_days(start_date, end_date):
+    """计算两个日期之间的工作日数量（不包括周末）"""
+    if start_date > end_date:
+        return calculate_business_days(end_date, start_date)
+    
+    # 计算总天数
+    days = (end_date - start_date).days + 1
+    
+    # 计算整周数量
+    weeks = days // 7
+    
+    # 计算剩余天数
+    remaining_days = days % 7
+    
+    # 计算起始日期的星期几（0是周一，6是周日）
+    start_weekday = start_date.weekday()
+    
+    # 计算剩余天数中的周末天数
+    weekend_days = 0
+    for i in range(remaining_days):
+        if (start_weekday + i) % 7 >= 5:  # 5是周六，6是周日
+            weekend_days += 1
+    
+    # 总工作日 = 总天数 - 周末天数
+    business_days = days - (weeks * 2) - weekend_days
+    
+    return business_days
+
+def is_market_trading_hours(dt: datetime) -> bool:
+    """判断给定的时间是否在美股交易时间内
+    
+    美股交易时间为：周一至周五，东部时间9:30-16:00
+    """
+    # 检查是否是工作日（周一至周五）
+    if dt.weekday() >= 5:  # 5是周六，6是周日
+        return False
+    
+    # 检查时间是否在交易时间内
+    market_open = time(9, 30)
+    market_close = time(16, 0)
+    current_time = dt.time()
+    
+    return market_open <= current_time <= market_close
 
 def get_market_cap(ticker: str, end_date: str = None) -> float:
     """使用 Alpha Vantage 获取市值数据"""
