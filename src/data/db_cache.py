@@ -108,6 +108,75 @@ class DBCache(Cache):
         # 更新数据库
         self.db.set_cash_flow_annual(ticker, data)
     
+    def get_income_statement_quarterly(self, ticker: str) -> list[dict[str, any]] | None:
+        """先从内存缓存获取，如果没有则从数据库获取"""
+        # 先尝试从内存缓存获取
+        cached_data = super().get_income_statement_quarterly(ticker)
+        if cached_data:
+            return cached_data
+        
+        # 如果内存缓存没有，则从数据库获取
+        db_data = self.db.get_income_statement_quarterly(ticker)
+        if db_data is not None and len(db_data) > 0:
+            # 更新缓存
+            super().set_income_statement_quarterly(ticker, db_data)
+            return db_data
+        
+        return None
+    
+    def set_income_statement_quarterly(self, ticker: str, data: list[dict[str, any]]):
+        """同时更新内存缓存和数据库"""
+        # 更新内存缓存
+        super().set_income_statement_quarterly(ticker, data)
+        # 更新数据库
+        self.db.set_income_statement_quarterly(ticker, data)
+    
+    def get_balance_sheet_quarterly(self, ticker: str) -> list[dict[str, any]] | None:
+        """先从内存缓存获取，如果没有则从数据库获取"""
+        # 先尝试从内存缓存获取
+        cached_data = super().get_balance_sheet_quarterly(ticker)
+        if cached_data:
+            return cached_data
+        
+        # 如果内存缓存没有，则从数据库获取
+        db_data = self.db.get_balance_sheet_quarterly(ticker)
+        if db_data is not None and len(db_data) > 0:
+            # 更新缓存
+            super().set_balance_sheet_quarterly(ticker, db_data)
+            return db_data
+        
+        return None
+    
+    def set_balance_sheet_quarterly(self, ticker: str, data: list[dict[str, any]]):
+        """同时更新内存缓存和数据库"""
+        # 更新内存缓存
+        super().set_balance_sheet_quarterly(ticker, data)
+        # 更新数据库
+        self.db.set_balance_sheet_quarterly(ticker, data)
+    
+    def get_cash_flow_quarterly(self, ticker: str) -> list[dict[str, any]] | None:
+        """先从内存缓存获取，如果没有则从数据库获取"""
+        # 先尝试从内存缓存获取
+        cached_data = super().get_cash_flow_quarterly(ticker)
+        if cached_data:
+            return cached_data
+        
+        # 如果内存缓存没有，则从数据库获取
+        db_data = self.db.get_cash_flow_quarterly(ticker)
+        if db_data is not None and len(db_data) > 0:
+            # 更新缓存
+            super().set_cash_flow_quarterly(ticker, db_data)
+            return db_data
+        
+        return None
+    
+    def set_cash_flow_quarterly(self, ticker: str, data: list[dict[str, any]]):
+        """同时更新内存缓存和数据库"""
+        # 更新内存缓存
+        super().set_cash_flow_quarterly(ticker, data)
+        # 更新数据库
+        self.db.set_cash_flow_quarterly(ticker, data)
+    
     def get_insider_trades(self, ticker: str) -> list[dict[str, any]] | None:
         """先从内存缓存获取，如果没有则从数据库获取"""
         # 先尝试从内存缓存获取

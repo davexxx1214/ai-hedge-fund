@@ -9,6 +9,9 @@ class Cache:
         self._income_statement_annual_cache: dict[str, list[dict[str, any]]] = {}
         self._balance_sheet_annual_cache: dict[str, list[dict[str, any]]] = {}
         self._cash_flow_annual_cache: dict[str, list[dict[str, any]]] = {}
+        self._income_statement_quarterly_cache: dict[str, list[dict[str, any]]] = {}
+        self._balance_sheet_quarterly_cache: dict[str, list[dict[str, any]]] = {}
+        self._cash_flow_quarterly_cache: dict[str, list[dict[str, any]]] = {}
         self._insider_trades_cache: dict[str, list[dict[str, any]]] = {}
         self._company_news_cache: dict[str, list[dict[str, any]]] = {}
 
@@ -90,6 +93,42 @@ class Cache:
         """Append new annual cash flow to cache."""
         self._cash_flow_annual_cache[ticker] = self._merge_data(
             self._cash_flow_annual_cache.get(ticker),
+            data,
+            key_field="fiscalDateEnding"
+        )
+    
+    def get_income_statement_quarterly(self, ticker: str) -> list[dict[str, any]]:
+        """Get cached quarterly income statement if available."""
+        return self._income_statement_quarterly_cache.get(ticker) or []
+
+    def set_income_statement_quarterly(self, ticker: str, data: list[dict[str, any]]):
+        """Append new quarterly income statement to cache."""
+        self._income_statement_quarterly_cache[ticker] = self._merge_data(
+            self._income_statement_quarterly_cache.get(ticker),
+            data,
+            key_field="fiscalDateEnding"
+        )
+        
+    def get_balance_sheet_quarterly(self, ticker: str) -> list[dict[str, any]]:
+        """Get cached quarterly balance sheet if available."""
+        return self._balance_sheet_quarterly_cache.get(ticker) or []
+
+    def set_balance_sheet_quarterly(self, ticker: str, data: list[dict[str, any]]):
+        """Append new quarterly balance sheet to cache."""
+        self._balance_sheet_quarterly_cache[ticker] = self._merge_data(
+            self._balance_sheet_quarterly_cache.get(ticker),
+            data,
+            key_field="fiscalDateEnding"
+        )
+        
+    def get_cash_flow_quarterly(self, ticker: str) -> list[dict[str, any]]:
+        """Get cached quarterly cash flow if available."""
+        return self._cash_flow_quarterly_cache.get(ticker) or []
+
+    def set_cash_flow_quarterly(self, ticker: str, data: list[dict[str, any]]):
+        """Append new quarterly cash flow to cache."""
+        self._cash_flow_quarterly_cache[ticker] = self._merge_data(
+            self._cash_flow_quarterly_cache.get(ticker),
             data,
             key_field="fiscalDateEnding"
         )

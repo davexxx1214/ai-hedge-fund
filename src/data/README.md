@@ -210,16 +210,6 @@ python src/tools/unit_test_api.py --delete-db --delete-cache
 3. 检查三张财务报表是否被正确保存到数据库
 4. 检查 JSON 缓存文件是否被正确创建
 
-## 示例脚本
-
-项目提供了一个示例脚本，演示如何使用数据库存储和查询股票数据：
-
-```bash
-python src/examples/db_example.py
-```
-
-该脚本会获取并存储几只股票的数据，然后执行一些示例查询，并生成价格图表。
-
 ## 数据库文件
 
 数据库文件默认保存在 `src/data/finance.db`。您可以在创建数据库实例时指定不同的路径：

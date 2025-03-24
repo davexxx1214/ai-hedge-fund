@@ -408,6 +408,23 @@ def get_financial_metrics(ticker: str, end_date: str = None, period: str = "ttm"
             save_to_file_cache('income_statement_annual', ticker, income_stmt_dict, cache_params)
             print(f"已保存 {ticker} 的利润表（年报）数据，共 {len(income_stmt)} 条记录")
         
+        # 获取并保存利润表（季度）数据
+        check_rate_limit()
+        try:
+            income_stmt_quarterly, _ = fd.get_income_statement_quarterly(symbol=ticker)
+            if len(income_stmt_quarterly.index) == 0:
+                raise ValueError("Empty quarterly income statement data")
+        except Exception as e:
+            print(f"Error getting quarterly income statement: {str(e)}")
+            income_stmt_quarterly = pd.DataFrame()
+        
+        # 保存季度利润表数据到数据库和JSON文件
+        if len(income_stmt_quarterly.index) > 0:
+            income_stmt_quarterly_dict = income_stmt_quarterly.to_dict('records')
+            db_cache.set_income_statement_quarterly(ticker, income_stmt_quarterly_dict)
+            save_to_file_cache('income_statement_quarterly', ticker, income_stmt_quarterly_dict, cache_params)
+            print(f"已保存 {ticker} 的利润表（季度）数据，共 {len(income_stmt_quarterly)} 条记录")
+        
         # 获取并保存资产负债表（年报）数据
         check_rate_limit()
         try:
@@ -425,6 +442,23 @@ def get_financial_metrics(ticker: str, end_date: str = None, period: str = "ttm"
             save_to_file_cache('balance_sheet_annual', ticker, balance_sheet_dict, cache_params)
             print(f"已保存 {ticker} 的资产负债表（年报）数据，共 {len(balance_sheet)} 条记录")
         
+        # 获取并保存资产负债表（季度）数据
+        check_rate_limit()
+        try:
+            balance_sheet_quarterly, _ = fd.get_balance_sheet_quarterly(symbol=ticker)
+            if len(balance_sheet_quarterly.index) == 0:
+                raise ValueError("Empty quarterly balance sheet data")
+        except Exception as e:
+            print(f"Error getting quarterly balance sheet: {str(e)}")
+            balance_sheet_quarterly = pd.DataFrame()
+        
+        # 保存季度资产负债表数据到数据库和JSON文件
+        if len(balance_sheet_quarterly.index) > 0:
+            balance_sheet_quarterly_dict = balance_sheet_quarterly.to_dict('records')
+            db_cache.set_balance_sheet_quarterly(ticker, balance_sheet_quarterly_dict)
+            save_to_file_cache('balance_sheet_quarterly', ticker, balance_sheet_quarterly_dict, cache_params)
+            print(f"已保存 {ticker} 的资产负债表（季度）数据，共 {len(balance_sheet_quarterly)} 条记录")
+        
         # 获取并保存现金流量表（年报）数据
         check_rate_limit()
         try:
@@ -441,6 +475,23 @@ def get_financial_metrics(ticker: str, end_date: str = None, period: str = "ttm"
             db_cache.set_cash_flow_annual(ticker, cash_flow_dict)
             save_to_file_cache('cash_flow_annual', ticker, cash_flow_dict, cache_params)
             print(f"已保存 {ticker} 的现金流量表（年报）数据，共 {len(cash_flow)} 条记录")
+        
+        # 获取并保存现金流量表（季度）数据
+        check_rate_limit()
+        try:
+            cash_flow_quarterly, _ = fd.get_cash_flow_quarterly(symbol=ticker)
+            if len(cash_flow_quarterly.index) == 0:
+                raise ValueError("Empty quarterly cash flow data")
+        except Exception as e:
+            print(f"Error getting quarterly cash flow: {str(e)}")
+            cash_flow_quarterly = pd.DataFrame()
+        
+        # 保存季度现金流量表数据到数据库和JSON文件
+        if len(cash_flow_quarterly.index) > 0:
+            cash_flow_quarterly_dict = cash_flow_quarterly.to_dict('records')
+            db_cache.set_cash_flow_quarterly(ticker, cash_flow_quarterly_dict)
+            save_to_file_cache('cash_flow_quarterly', ticker, cash_flow_quarterly_dict, cache_params)
+            print(f"已保存 {ticker} 的现金流量表（季度）数据，共 {len(cash_flow_quarterly)} 条记录")
         
         # 计算财务指标
         try:

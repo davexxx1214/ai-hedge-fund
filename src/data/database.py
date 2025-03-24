@@ -178,6 +178,126 @@ class Database:
         )
         ''')
         
+        # 创建利润表（季度）
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS income_statement_quarterly (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ticker TEXT NOT NULL,
+            fiscalDateEnding TEXT NOT NULL,
+            reportedCurrency TEXT,
+            grossProfit REAL,
+            totalRevenue REAL,
+            costOfRevenue REAL,
+            costofGoodsAndServicesSold REAL,
+            operatingIncome REAL,
+            sellingGeneralAndAdministrative REAL,
+            researchAndDevelopment REAL,
+            operatingExpenses REAL,
+            investmentIncomeNet REAL,
+            netInterestIncome REAL,
+            interestIncome REAL,
+            interestExpense REAL,
+            nonInterestIncome REAL,
+            otherNonOperatingIncome REAL,
+            depreciation REAL,
+            depreciationAndAmortization REAL,
+            incomeBeforeTax REAL,
+            incomeTaxExpense REAL,
+            interestAndDebtExpense REAL,
+            netIncomeFromContinuingOperations REAL,
+            comprehensiveIncomeNetOfTax REAL,
+            ebit REAL,
+            ebitda REAL,
+            netIncome REAL,
+            UNIQUE(ticker, fiscalDateEnding)
+        )
+        ''')
+        
+        # 创建资产负债表（季度）
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS balance_sheet_quarterly (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ticker TEXT NOT NULL,
+            fiscalDateEnding TEXT NOT NULL,
+            reportedCurrency TEXT,
+            totalAssets REAL,
+            totalCurrentAssets REAL,
+            cashAndCashEquivalentsAtCarryingValue REAL,
+            cashAndShortTermInvestments REAL,
+            inventory REAL,
+            currentNetReceivables REAL,
+            totalNonCurrentAssets REAL,
+            propertyPlantEquipment REAL,
+            accumulatedDepreciationAmortizationPPE REAL,
+            intangibleAssets REAL,
+            intangibleAssetsExcludingGoodwill REAL,
+            goodwill REAL,
+            investments REAL,
+            longTermInvestments REAL,
+            shortTermInvestments REAL,
+            otherCurrentAssets REAL,
+            otherNonCurrentAssets REAL,
+            totalLiabilities REAL,
+            totalCurrentLiabilities REAL,
+            currentAccountsPayable REAL,
+            deferredRevenue REAL,
+            currentDebt REAL,
+            shortTermDebt REAL,
+            totalNonCurrentLiabilities REAL,
+            capitalLeaseObligations REAL,
+            longTermDebt REAL,
+            currentLongTermDebt REAL,
+            longTermDebtNoncurrent REAL,
+            shortLongTermDebtTotal REAL,
+            otherCurrentLiabilities REAL,
+            otherNonCurrentLiabilities REAL,
+            totalShareholderEquity REAL,
+            treasuryStock REAL,
+            retainedEarnings REAL,
+            commonStock REAL,
+            commonStockSharesOutstanding REAL,
+            UNIQUE(ticker, fiscalDateEnding)
+        )
+        ''')
+        
+        # 创建现金流量表（季度）
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS cash_flow_quarterly (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ticker TEXT NOT NULL,
+            fiscalDateEnding TEXT NOT NULL,
+            reportedCurrency TEXT,
+            operatingCashflow REAL,
+            paymentsForOperatingActivities REAL,
+            proceedsFromOperatingActivities REAL,
+            changeInOperatingLiabilities REAL,
+            changeInOperatingAssets REAL,
+            depreciationDepletionAndAmortization REAL,
+            capitalExpenditures REAL,
+            changeInReceivables REAL,
+            changeInInventory REAL,
+            profitLoss REAL,
+            cashflowFromInvestment REAL,
+            cashflowFromFinancing REAL,
+            proceedsFromRepaymentsOfShortTermDebt REAL,
+            paymentsForRepurchaseOfCommonStock REAL,
+            paymentsForRepurchaseOfEquity REAL,
+            paymentsForRepurchaseOfPreferredStock REAL,
+            dividendPayout REAL,
+            dividendPayoutCommonStock REAL,
+            dividendPayoutPreferredStock REAL,
+            proceedsFromIssuanceOfCommonStock REAL,
+            proceedsFromIssuanceOfLongTermDebtAndCapitalSecuritiesNet REAL,
+            proceedsFromIssuanceOfPreferredStock REAL,
+            proceedsFromRepurchaseOfEquity REAL,
+            proceedsFromSaleOfTreasuryStock REAL,
+            changeInCashAndCashEquivalents REAL,
+            changeInExchangeRate REAL,
+            netIncome REAL,
+            UNIQUE(ticker, fiscalDateEnding)
+        )
+        ''')
+        
         # 创建内部交易表
         cursor.execute('''
         CREATE TABLE IF NOT EXISTS insider_trades (
@@ -482,6 +602,183 @@ class Database:
         cursor = self.conn.cursor()
         
         sql = "SELECT * FROM cash_flow_annual WHERE ticker = ?"
+        params = [ticker]
+        
+        if fiscal_date_ending:
+            sql += " AND fiscalDateEnding = ?"
+            params.append(fiscal_date_ending)
+        
+        sql += " ORDER BY fiscalDateEnding DESC"
+        
+        cursor.execute(sql, params)
+        rows = cursor.fetchall()
+        
+        # 转换为字典列表
+        result = []
+        for row in rows:
+            item = dict(row)
+            result.append(item)
+        
+        return result
+    
+    # 利润表（季度）方法
+    def set_income_statement_quarterly(self, ticker, data):
+        """存储季度利润表数据"""
+        cursor = self.conn.cursor()
+        
+        # 如果data是pandas DataFrame，转换为字典列表
+        if hasattr(data, 'to_dict'):
+            data_list = data.to_dict('records')
+        else:
+            data_list = data
+        
+        for item in data_list:
+            # 准备插入的字段
+            fields = ['ticker']
+            values = [ticker]
+            
+            # 动态添加其他字段
+            for key, value in item.items():
+                fields.append(key)
+                values.append(value)
+            
+            # 构建SQL语句
+            placeholders = ', '.join(['?'] * len(fields))
+            fields_str = ', '.join(fields)
+            
+            # 使用INSERT OR REPLACE确保唯一性
+            sql = f"INSERT OR REPLACE INTO income_statement_quarterly ({fields_str}) VALUES ({placeholders})"
+            
+            try:
+                cursor.execute(sql, values)
+            except Exception as e:
+                print(f"Error inserting income statement quarterly: {e}")
+        
+        self.conn.commit()
+    
+    def get_income_statement_quarterly(self, ticker, fiscal_date_ending=None):
+        """获取季度利润表数据"""
+        cursor = self.conn.cursor()
+        
+        sql = "SELECT * FROM income_statement_quarterly WHERE ticker = ?"
+        params = [ticker]
+        
+        if fiscal_date_ending:
+            sql += " AND fiscalDateEnding = ?"
+            params.append(fiscal_date_ending)
+        
+        sql += " ORDER BY fiscalDateEnding DESC"
+        
+        cursor.execute(sql, params)
+        rows = cursor.fetchall()
+        
+        # 转换为字典列表
+        result = []
+        for row in rows:
+            item = dict(row)
+            result.append(item)
+        
+        return result
+    
+    # 资产负债表（季度）方法
+    def set_balance_sheet_quarterly(self, ticker, data):
+        """存储季度资产负债表数据"""
+        cursor = self.conn.cursor()
+        
+        # 如果data是pandas DataFrame，转换为字典列表
+        if hasattr(data, 'to_dict'):
+            data_list = data.to_dict('records')
+        else:
+            data_list = data
+        
+        for item in data_list:
+            # 准备插入的字段
+            fields = ['ticker']
+            values = [ticker]
+            
+            # 动态添加其他字段
+            for key, value in item.items():
+                fields.append(key)
+                values.append(value)
+            
+            # 构建SQL语句
+            placeholders = ', '.join(['?'] * len(fields))
+            fields_str = ', '.join(fields)
+            
+            # 使用INSERT OR REPLACE确保唯一性
+            sql = f"INSERT OR REPLACE INTO balance_sheet_quarterly ({fields_str}) VALUES ({placeholders})"
+            
+            try:
+                cursor.execute(sql, values)
+            except Exception as e:
+                print(f"Error inserting balance sheet quarterly: {e}")
+        
+        self.conn.commit()
+    
+    def get_balance_sheet_quarterly(self, ticker, fiscal_date_ending=None):
+        """获取季度资产负债表数据"""
+        cursor = self.conn.cursor()
+        
+        sql = "SELECT * FROM balance_sheet_quarterly WHERE ticker = ?"
+        params = [ticker]
+        
+        if fiscal_date_ending:
+            sql += " AND fiscalDateEnding = ?"
+            params.append(fiscal_date_ending)
+        
+        sql += " ORDER BY fiscalDateEnding DESC"
+        
+        cursor.execute(sql, params)
+        rows = cursor.fetchall()
+        
+        # 转换为字典列表
+        result = []
+        for row in rows:
+            item = dict(row)
+            result.append(item)
+        
+        return result
+    
+    # 现金流量表（季度）方法
+    def set_cash_flow_quarterly(self, ticker, data):
+        """存储季度现金流量表数据"""
+        cursor = self.conn.cursor()
+        
+        # 如果data是pandas DataFrame，转换为字典列表
+        if hasattr(data, 'to_dict'):
+            data_list = data.to_dict('records')
+        else:
+            data_list = data
+        
+        for item in data_list:
+            # 准备插入的字段
+            fields = ['ticker']
+            values = [ticker]
+            
+            # 动态添加其他字段
+            for key, value in item.items():
+                fields.append(key)
+                values.append(value)
+            
+            # 构建SQL语句
+            placeholders = ', '.join(['?'] * len(fields))
+            fields_str = ', '.join(fields)
+            
+            # 使用INSERT OR REPLACE确保唯一性
+            sql = f"INSERT OR REPLACE INTO cash_flow_quarterly ({fields_str}) VALUES ({placeholders})"
+            
+            try:
+                cursor.execute(sql, values)
+            except Exception as e:
+                print(f"Error inserting cash flow quarterly: {e}")
+        
+        self.conn.commit()
+    
+    def get_cash_flow_quarterly(self, ticker, fiscal_date_ending=None):
+        """获取季度现金流量表数据"""
+        cursor = self.conn.cursor()
+        
+        sql = "SELECT * FROM cash_flow_quarterly WHERE ticker = ?"
         params = [ticker]
         
         if fiscal_date_ending:
