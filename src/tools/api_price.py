@@ -2,8 +2,10 @@
 价格相关API功能
 """
 import pandas as pd
+import ntplib
 from datetime import datetime, timedelta, time
 from pytz import timezone
+import holidays
 
 from src.tools.api_base import ts, check_rate_limit
 from src.tools.api_cache import save_to_file_cache, load_from_file_cache
@@ -13,6 +15,22 @@ from src.data.cache import get_cache
 
 # 内存缓存实例
 cache = get_cache()
+
+def get_network_time():
+    """从NTP服务器获取准确的网络时间"""
+    try:
+        client = ntplib.NTPClient()
+        # 使用公共NTP服务器池
+        response = client.request('pool.ntp.org', timeout=5)
+        # 将NTP时间戳转换为datetime对象（UTC时间）
+        # 注意：使用utcfromtimestamp而不是fromtimestamp，避免本地时区影响
+        utc_time = datetime.utcfromtimestamp(response.tx_time).replace(tzinfo=timezone('UTC'))
+        return utc_time
+    except Exception as e:
+        print(f"获取网络时间失败: {e}")
+        # 如果获取网络时间失败，则使用本地时间作为备选
+        print("使用本地时间作为备选")
+        return datetime.now(timezone('UTC'))
 
 def get_prices(ticker: str, start_date: str, end_date: str = None) -> list:
     """使用 Alpha Vantage 获取历史价格数据
@@ -50,49 +68,65 @@ def get_prices(ticker: str, start_date: str, end_date: str = None) -> list:
         # 判断是否需要更新数据（考虑交易日）
         need_update = False
         if db_latest_date and db_latest_date < latest_date:
-            # 获取当前日期或指定的结束日期，并确保转换为美东时间
+            # 获取美东时间
             eastern = timezone('US/Eastern')
+            
+            current_system_datetime = datetime.now(eastern)
             if end_date:
-                current_date = datetime.strptime(end_date, '%Y-%m-%d').date()
-                # 使用指定的结束日期时，假设是当天结束时间
-                current_datetime = datetime.combine(current_date, time(23, 59, 59)).replace(tzinfo=eastern)
+                provided_date = datetime.strptime(end_date, '%Y-%m-%d').date()
+                if provided_date == current_system_datetime.date():
+                    current_date = provided_date
+                    current_datetime = current_system_datetime
+                else:
+                    current_date = provided_date
+                    current_datetime = eastern.localize(datetime.combine(provided_date, time(23, 59, 59)))
             else:
-                # 获取当前时间并正确转换为美东时间
-                local_tz = timezone('Asia/Shanghai')  # 假设本地时区是东8区
-                now = datetime.now()
-                local_dt = local_tz.localize(now)
-                current_datetime = local_dt.astimezone(eastern)
-                current_date = current_datetime.date()
+                current_datetime = current_system_datetime
+                current_date = current_system_datetime.date()
             
-            print(f"当前本地时间: {now}, 转换为美东时间: {current_datetime}")
+            print(f"当前美东时间: {current_datetime}")
             
-            # 获取数据库最新日期
+            # 获取数据库最新日期作为日期对象
             db_latest_datetime = datetime.strptime(db_latest_date, '%Y-%m-%d').date()
             
-            # 判断当前是否为周末
-            is_weekend = current_date.weekday() >= 5  # 5是周六，6是周日
-            
-            # 判断数据库最新日期是否为周五
-            is_db_friday = db_latest_datetime.weekday() == 4  # 4是周五
-            
-            # 判断当前是否在交易时间内
-            is_trading_hours = is_market_trading_hours(current_datetime)
-            print(f"当前时间: {current_datetime}，是否交易时间: {is_trading_hours}")
-            
-            # 计算工作日差距（不考虑周末）
-            business_days_diff = calculate_business_days(db_latest_datetime, current_date)
-            
-            # 如果当前是周末，且数据库最新日期是周五，则不需要更新
-            if is_weekend and is_db_friday and (current_date - db_latest_datetime).days <= 2:
-                print(f"当前是周末（{current_date}），数据库最新日期为周五（{db_latest_date}），无需更新")
-                need_update = False
-            # 如果当前是交易日但处于交易时间内，且数据库最新日期是最近的交易日，则不需要更新
-            elif not is_weekend and is_trading_hours and business_days_diff <= 1:
-                print(f"当前处于交易时间（{current_datetime}），数据库最新日期为{db_latest_date}，无需更新")
-                need_update = False
+            # 新逻辑：如果 end_date 指定为今天且当前处于交易时间，则不更新数据
+            if end_date:
+                provided_date = datetime.strptime(end_date, '%Y-%m-%d').date()
+                if provided_date == current_system_datetime.date() and is_market_trading_hours(current_datetime):
+                    print(f"当前处于交易时间（{current_datetime}），当天交易尚未结束，故不更新数据")
+                    need_update = False
+                else:
+                    # 传统逻辑判断
+                    is_weekend = current_date.weekday() >= 5  # 5是周六，6是周日
+                    is_db_friday = db_latest_datetime.weekday() == 4  # 4是周五
+                    is_trading_hours = is_market_trading_hours(current_datetime)
+                    print(f"当前时间: {current_datetime}，是否交易时间: {is_trading_hours}")
+                    business_days_diff = calculate_business_days(db_latest_datetime, current_date)
+                    if is_weekend and is_db_friday and (current_date - db_latest_datetime).days <= 2:
+                        print(f"当前是周末（{current_date}），数据库最新日期为周五（{db_latest_date}），无需更新")
+                        need_update = False
+                    elif not is_weekend and is_trading_hours and business_days_diff <= 1:
+                        print(f"当前处于交易时间（{current_datetime}），数据库最新日期为{db_latest_date}，无需更新")
+                        need_update = False
+                    else:
+                        print(f"数据库中最新日期为 {db_latest_date}，需要更新到 {latest_date}")
+                        need_update = True
             else:
-                print(f"数据库中最新日期为 {db_latest_date}，需要更新到 {latest_date}")
-                need_update = True
+                # 如果未指定 end_date，则按传统逻辑判断
+                is_weekend = current_date.weekday() >= 5  # 5是周六，6是周日
+                is_db_friday = db_latest_datetime.weekday() == 4  # 4是周五
+                is_trading_hours = is_market_trading_hours(current_datetime)
+                print(f"当前时间: {current_datetime}，是否交易时间: {is_trading_hours}")
+                business_days_diff = calculate_business_days(db_latest_datetime, current_date)
+                if is_weekend and is_db_friday and (current_date - db_latest_datetime).days <= 2:
+                    print(f"当前是周末（{current_date}），数据库最新日期为周五（{db_latest_date}），无需更新")
+                    need_update = False
+                elif not is_weekend and is_trading_hours and business_days_diff <= 1:
+                    print(f"当前处于交易时间（{current_datetime}），数据库最新日期为{db_latest_date}，无需更新")
+                    need_update = False
+                else:
+                    print(f"数据库中最新日期为 {db_latest_date}，需要更新到 {latest_date}")
+                    need_update = True
         
         if need_update:
             # 设置新的起始日期为数据库中最新日期的后一天
@@ -221,21 +255,43 @@ def calculate_business_days(start_date, end_date):
     
     return business_days
 
-def is_market_trading_hours(dt: datetime) -> bool:
+def is_market_trading_hours(dt: datetime = None) -> bool:
     """判断给定的时间是否在美股交易时间内
     
-    美股交易时间为：周一至周五，东部时间9:30-16:00
+    美股交易时间为：周一至周五，东部时间9:30-16:00，排除节假日
+    
+    参数:
+        dt: 要检查的时间，如果为None则使用网络时间
     """
+    # 如果没有提供时间，则获取当前网络时间
+    if dt is None:
+        utc_time = get_network_time()
+        # 转换为美国东部时间
+        eastern = timezone('US/Eastern')
+        dt = utc_time.astimezone(eastern)
+        print(f"当前网络时间(美东): {dt}")
+    
     # 检查是否是工作日（周一至周五）
     if dt.weekday() >= 5:  # 5是周六，6是周日
         return False
+    
+    # 检查是否是节假日
+    try:
+        us_holidays = holidays.NYSE(years=dt.year)
+        current_date = dt.date()
+        
+        if current_date in us_holidays:
+            return False
+    except Exception as e:
+        print(f"检查节假日时出错: {e}")
+        # 节假日检查失败时，继续按时间判断
     
     # 检查时间是否在交易时间内
     market_open = time(9, 30)
     market_close = time(16, 0)
     current_time = dt.time()
     
-    return market_open <= current_time <= market_close
+    return market_open <= current_time < market_close  # 注意：收盘时间用 <，因为 16:00:00 已经收盘
 
 def get_market_cap(ticker: str, end_date: str = None) -> float:
     """使用 Alpha Vantage 获取市值数据"""

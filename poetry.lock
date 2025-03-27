@@ -1092,6 +1092,21 @@ files = [
 ]
 
 [[package]]
+name = "holidays"
+version = "0.43"
+description = "Generate and work with holidays in Python"
+optional = false
+python-versions = ">=3.8"
+groups = ["main"]
+files = [
+    {file = "holidays-0.43-py3-none-any.whl", hash = "sha256:1dca114761bac05fe3e6684d55903c3bd9fb757c37c3dac9da66afd7f8788e38"},
+    {file = "holidays-0.43.tar.gz", hash = "sha256:29e2c5436207dd268a3702338bcc92032aaacf47ed3bb324ff9ba8170e6d0932"},
+]
+
+[package.dependencies]
+python-dateutil = "*"
+
+[[package]]
 name = "httpcore"
 version = "1.0.7"
 description = "A minimal low-level HTTP client."
@@ -1971,6 +1986,18 @@ groups = ["dev"]
 files = [
     {file = "mypy_extensions-1.0.0-py3-none-any.whl", hash = "sha256:4392f6c0eb8a5668a69e23d168ffa70f0be9ccfd32b5cc2d26a34ae5b844552d"},
     {file = "mypy_extensions-1.0.0.tar.gz", hash = "sha256:75dbf8955dc00442a438fc4d0666508a9a97b6bd41aa2f0ffe9d2f2725af0782"},
+]
+
+[[package]]
+name = "ntplib"
+version = "0.4.0"
+description = "Python NTP library"
+optional = false
+python-versions = "*"
+groups = ["main"]
+files = [
+    {file = "ntplib-0.4.0-py2.py3-none-any.whl", hash = "sha256:8d27375329ed7ff38755f7b6d4658b28edc147cadf40338a63a0da8133469d60"},
+    {file = "ntplib-0.4.0.tar.gz", hash = "sha256:899d8fb5f8c2555213aea95efca02934c7343df6ace9d7628a5176b176906267"},
 ]
 
 [[package]]
@@ -3503,4 +3530,4 @@ type = ["pytest-mypy"]
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.9"
-content-hash = "777179e73b9d66de13094073c2384691a886cf5c08abf6c1edd3133a8bdea3e0"
+content-hash = "8dff2380c1037b59a971a912be4e73066bb2513e4328733799b334bc1b4e6fc4"
