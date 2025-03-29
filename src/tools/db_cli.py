@@ -23,6 +23,7 @@ from src.data.database import get_db
 from src.data.db_cache import get_db_cache
 from src.data.sql_tools import get_sql_tools
 from src.tools.api import get_prices, get_income_statement, get_balance_sheet, get_cash_flow, get_company_news, get_insider_trades
+from src.tools.api_overview import get_company_overview
 
 def fetch_data(args):
     """获取并存储股票数据"""
@@ -51,6 +52,15 @@ def fetch_data(args):
     
     # 获取并存储股票数据
     for ticker in tickers:
+        # 获取公司概览数据
+        if args.data_type in ['all', 'overview']:
+            print(f"获取 {ticker} 的公司概览数据...")
+            overview = get_company_overview(ticker)
+            if overview:
+                db_cache.set_company_overview(ticker, overview)
+                print(f"已存储公司概览数据")
+            else:
+                print(f"未能获取 {ticker} 的公司概览数据")
         # 获取价格数据
         if args.data_type in ['all', 'prices']:
             print(f"获取 {ticker} 的价格数据...")
@@ -370,6 +380,53 @@ def query_custom(args):
     print(f"\n查询结果 ({len(df)} 条记录):")
     print(tabulate(df.head(20), headers='keys', tablefmt='psql'))
 
+def query_overview(args):
+    """查询公司概览数据"""
+    if not args.ticker:
+        print("错误: 需要指定股票代码 (--ticker)")
+        return
+    
+    db = get_db()
+    data = db.get_company_overview(args.ticker)
+    if not data:
+        print(f"没有找到 {args.ticker} 的公司概览数据")
+        return
+    
+    print(f"\n{args.ticker} 的公司概览数据:")
+    
+    # 打印基本信息
+    print("\n基本信息:")
+    basic_fields = ['name', 'symbol', 'sector', 'industry', 'exchange', 'country', 'address', 'official_site']
+    basic_info = {k: data[k] for k in basic_fields if k in data}
+    print(tabulate([[k, v] for k, v in basic_info.items()], headers=['字段', '值'], tablefmt='psql'))
+    
+    # 打印财务指标
+    print("\n财务指标:")
+    financial_fields = ['market_capitalization', 'ebitda', 'pe_ratio', 'peg_ratio', 'book_value', 
+                        'dividend_per_share', 'dividend_yield', 'eps', 'revenue_ttm', 'gross_profit_ttm']
+    financial_info = {k: data[k] for k in financial_fields if k in data}
+    print(tabulate([[k, v] for k, v in financial_info.items()], headers=['指标', '值'], tablefmt='psql'))
+    
+    # 打印技术指标
+    print("\n技术指标:")
+    technical_fields = ['beta', 'week_52_high', 'week_52_low', 'day_50_moving_average', 'day_200_moving_average']
+    technical_info = {k: data[k] for k in technical_fields if k in data}
+    print(tabulate([[k, v] for k, v in technical_info.items()], headers=['指标', '值'], tablefmt='psql'))
+    
+    # 打印分析师评级
+    print("\n分析师评级:")
+    analyst_fields = ['analyst_target_price', 'analyst_rating_strong_buy', 'analyst_rating_buy', 
+                     'analyst_rating_hold', 'analyst_rating_sell', 'analyst_rating_strong_sell']
+    analyst_info = {k: data[k] for k in analyst_fields if k in data}
+    print(tabulate([[k, v] for k, v in analyst_info.items()], headers=['指标', '值'], tablefmt='psql'))
+    
+    # 打印公司描述
+    if 'description' in data and data['description']:
+        print("\n公司描述:")
+        print(data['description'])
+
+# ... existing code ...
+
 def main():
     """主函数，解析命令行参数并执行相应的操作"""
     parser = argparse.ArgumentParser(description='SQLite数据库命令行工具，用于管理和查询股票金融数据')
@@ -378,7 +435,9 @@ def main():
     # 获取数据子命令
     fetch_parser = subparsers.add_parser('fetch', help='获取并存储股票数据')
     fetch_parser.add_argument('--tickers', required=True, help='股票代码，多个代码用逗号分隔')
-    fetch_parser.add_argument('--data-type', default='all', choices=['all', 'prices', 'financials', 'news', 'trades'], help='数据类型')
+    fetch_parser.add_argument('--data-type', default='all',                              
+                             choices=['all', 'prices', 'financials', 'news', 'trades', 'overview'], 
+                             help='数据类型')
     fetch_parser.add_argument('--start-date', help='开始日期 (YYYY-MM-DD)')
     fetch_parser.add_argument('--end-date', help='结束日期 (YYYY-MM-DD)')
     
@@ -392,7 +451,7 @@ def main():
     query_parser.add_argument('--query-type', required=True, 
                              choices=['prices', 'income_annual', 'balance_annual', 'cashflow_annual', 
                                      'income_quarterly', 'balance_quarterly', 'cashflow_quarterly',
-                                     'news', 'trades', 'correlation', 'custom'], 
+                                     'news', 'trades', 'correlation', 'custom', 'overview'], 
                              help='查询类型')
     query_parser.add_argument('--ticker', help='股票代码')
     query_parser.add_argument('--tickers', help='股票代码列表，多个代码用逗号分隔 (仅当 query-type 为 correlation 时使用)')
@@ -431,6 +490,8 @@ def main():
             query_correlation(args)
         elif args.query_type == 'custom':
             query_custom(args)
+        elif args.query_type == 'overview':
+            query_overview(args)
     else:
         parser.print_help()
 

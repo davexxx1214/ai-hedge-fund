@@ -1,6 +1,6 @@
 # 股票金融数据SQLite数据库
 
-本模块提供了一个SQLite数据库实现，用于存储和管理股票的金融数据。数据库支持存储股票价格、财务报表、内部交易和公司新闻等数据。
+本模块提供了一个SQLite数据库实现，用于存储和管理股票的金融数据。数据库支持存储股票价格、财务报表、内部交易、公司新闻和公司概览等数据。
 
 ## 数据库结构
 
@@ -81,6 +81,35 @@
    - overall_sentiment_label: 整体情感标签
    - topics: 主题（JSON字符串）
 
+10. **company_overview** - 存储公司概览数据
+    - ticker: 股票代码
+    - last_updated: 最后更新时间
+    - name: 公司名称
+    - symbol: 股票代码
+    - sector: 行业部门
+    - industry: 行业
+    - exchange: 交易所
+    - country: 国家
+    - address: 地址
+    - official_site: 官方网站
+    - description: 公司描述
+    - market_capitalization: 市值
+    - ebitda: 息税折旧摊销前利润
+    - pe_ratio: 市盈率
+    - peg_ratio: 市盈率相对盈利增长比率
+    - book_value: 每股账面价值
+    - dividend_per_share: 每股股息
+    - dividend_yield: 股息收益率
+    - eps: 每股收益
+    - revenue_ttm: 过去12个月收入
+    - gross_profit_ttm: 过去12个月毛利润
+    - beta: 贝塔系数
+    - week_52_high: 52周最高价
+    - week_52_low: 52周最低价
+    - day_50_moving_average: 50日移动平均线
+    - day_200_moving_average: 200日移动平均线
+    - 以及其他财务和分析师指标
+
 ## 使用方法
 
 ### 基本用法
@@ -134,6 +163,10 @@ db_cache.set_company_news('AAPL', news)
 # 存储内部交易数据
 trades = get_insider_trades('AAPL', '2023-12-31', '2023-01-01')
 db_cache.set_insider_trades('AAPL', trades)
+
+# 存储公司概览数据
+overview = get_company_overview('AAPL')
+db_cache.set_company_overview('AAPL', overview)
 ```
 
 ### 查询数据
@@ -165,6 +198,9 @@ trades = db.get_insider_trades('AAPL', '2023-01-01', '2023-12-31')
 
 # 查询公司新闻数据
 news = db.get_company_news('AAPL', '2023-01-01', '2023-12-31')
+
+# 查询公司概览数据
+overview = db.get_company_overview('AAPL')
 ```
 
 ### 使用SQL工具进行高级查询和分析
@@ -203,6 +239,9 @@ valuation_df = sql_tools.get_valuation_trend('AAPL')
 
 # 执行自定义SQL查询
 custom_df = sql_tools.query_to_df("SELECT * FROM prices WHERE ticker = 'AAPL' ORDER BY time DESC LIMIT 10")
+
+# 获取公司概览数据
+overview_df = sql_tools.query_to_df("SELECT * FROM company_overview WHERE ticker = 'AAPL'")
 ```
 
 ## 命令行工具
@@ -212,6 +251,9 @@ custom_df = sql_tools.query_to_df("SELECT * FROM prices WHERE ticker = 'AAPL' OR
 ```bash
 # 获取并存储股票数据
 python src/tools/db_cli.py fetch --tickers AAPL,MSFT,GOOGL --start-date 2023-01-01 --end-date 2023-12-31
+
+# 获取公司概览数据
+python src/tools/db_cli.py fetch --tickers AAPL --data-type overview
 
 # 显示数据库摘要信息
 python src/tools/db_cli.py info --info-type summary
@@ -241,6 +283,9 @@ python src/tools/db_cli.py query --query-type news --ticker AAPL
 # 查询内部交易数据
 python src/tools/db_cli.py query --query-type trades --ticker AAPL
 
+# 查询公司概览数据
+python src/tools/db_cli.py query --query-type overview --ticker AAPL
+
 # 查询股票相关性
 python src/tools/db_cli.py query --query-type correlation --tickers AAPL,MSFT,GOOGL
 
@@ -260,11 +305,3 @@ from pathlib import Path
 custom_db = Database(db_path=Path("path/to/your/database.db"))
 ```
 ```
-
-主要更新内容：
-
-1. 移除了所有关于 financial_metrics 表的引用
-2. 更新了存储数据部分，使用六个独立的财务报表表替代原来的 financial_metrics
-3. 更新了查询数据部分，使用六个独立的财务报表表的查询方法
-4. 更新了 SQL 工具部分，使用直接查询六个财务报表表的方式
-5. 更新了命令行工具部分，使用新的查询类型名称

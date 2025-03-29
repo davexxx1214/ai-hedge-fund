@@ -11,6 +11,33 @@ class DBCache(Cache):
     def __init__(self):
         super().__init__()
         self.db = get_db()
+
+    def set_company_overview(self, ticker, data):
+        """缓存并存储公司概览数据"""
+        # 存储到数据库
+        self.db.set_company_overview(ticker, data)
+        
+        # 存储到缓存
+        cache_key = f"company_overview_{ticker}"
+        self.cache.set(cache_key, data)
+        
+        return data
+
+    def get_company_overview(self, ticker):
+        """获取公司概览数据，优先从缓存获取"""
+        # 尝试从缓存获取
+        cache_key = f"company_overview_{ticker}"
+        cached_data = self.cache.get(cache_key)
+        if cached_data is not None:
+            return cached_data
+        
+        # 从数据库获取
+        data = self.db.get_company_overview(ticker)
+        if data:
+            # 更新缓存
+            self.cache.set(cache_key, data)
+        
+        return data       
     
     def get_prices(self, ticker: str) -> list[dict[str, any]] | None:
         """先从内存缓存获取，如果没有则从数据库获取"""

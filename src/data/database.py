@@ -40,6 +40,67 @@ class Database:
         """创建数据库表结构"""
         cursor = self.conn.cursor()
         
+        # 创建公司概览表
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS company_overview (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ticker TEXT NOT NULL,
+            last_updated TEXT NOT NULL,
+            symbol TEXT,
+            asset_type TEXT,
+            name TEXT,
+            description TEXT,
+            cik TEXT,
+            exchange TEXT,
+            currency TEXT,
+            country TEXT,
+            sector TEXT,
+            industry TEXT,
+            address TEXT,
+            official_site TEXT,
+            fiscal_year_end TEXT,
+            latest_quarter TEXT,
+            market_capitalization REAL,
+            ebitda REAL,
+            pe_ratio REAL,
+            peg_ratio REAL,
+            book_value REAL,
+            dividend_per_share REAL,
+            dividend_yield REAL,
+            eps REAL,
+            revenue_per_share_ttm REAL,
+            profit_margin REAL,
+            operating_margin_ttm REAL,
+            return_on_assets_ttm REAL,
+            return_on_equity_ttm REAL,
+            revenue_ttm REAL,
+            gross_profit_ttm REAL,
+            diluted_eps_ttm REAL,
+            quarterly_earnings_growth_yoy REAL,
+            quarterly_revenue_growth_yoy REAL,
+            analyst_target_price REAL,
+            analyst_rating_strong_buy INTEGER,
+            analyst_rating_buy INTEGER,
+            analyst_rating_hold INTEGER,
+            analyst_rating_sell INTEGER,
+            analyst_rating_strong_sell INTEGER,
+            trailing_pe REAL,
+            forward_pe REAL,
+            price_to_sales_ratio_ttm REAL,
+            price_to_book_ratio REAL,
+            ev_to_revenue REAL,
+            ev_to_ebitda REAL,
+            beta REAL,
+            week_52_high REAL,
+            week_52_low REAL,
+            day_50_moving_average REAL,
+            day_200_moving_average REAL,
+            shares_outstanding REAL,
+            dividend_date TEXT,
+            ex_dividend_date TEXT,
+            UNIQUE(ticker)
+        )
+        ''')
         # 创建股票价格表
         cursor.execute('''
         CREATE TABLE IF NOT EXISTS prices (
@@ -57,6 +118,7 @@ class Database:
             UNIQUE(ticker, time)
         )
         ''')
+        
         
         # 创建利润表（年报）
         cursor.execute('''
@@ -386,6 +448,127 @@ class Database:
             # 忽略析构函数中的错误
             pass
     
+    def set_company_overview(self, ticker, data):
+        """存储公司概览数据"""
+        cursor = self.conn.cursor()
+        
+        # 准备数据
+        now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        
+        # 字段映射，将API返回的字段名转换为数据库字段名
+        field_mapping = {
+            'Symbol': 'symbol',
+            'AssetType': 'asset_type',
+            'Name': 'name',
+            'Description': 'description',
+            'CIK': 'cik',
+            'Exchange': 'exchange',
+            'Currency': 'currency',
+            'Country': 'country',
+            'Sector': 'sector',
+            'Industry': 'industry',
+            'Address': 'address',
+            'OfficialSite': 'official_site',
+            'FiscalYearEnd': 'fiscal_year_end',
+            'LatestQuarter': 'latest_quarter',
+            'MarketCapitalization': 'market_capitalization',
+            'EBITDA': 'ebitda',
+            'PERatio': 'pe_ratio',
+            'PEGRatio': 'peg_ratio',
+            'BookValue': 'book_value',
+            'DividendPerShare': 'dividend_per_share',
+            'DividendYield': 'dividend_yield',
+            'EPS': 'eps',
+            'RevenuePerShareTTM': 'revenue_per_share_ttm',
+            'ProfitMargin': 'profit_margin',
+            'OperatingMarginTTM': 'operating_margin_ttm',
+            'ReturnOnAssetsTTM': 'return_on_assets_ttm',
+            'ReturnOnEquityTTM': 'return_on_equity_ttm',
+            'RevenueTTM': 'revenue_ttm',
+            'GrossProfitTTM': 'gross_profit_ttm',
+            'DilutedEPSTTM': 'diluted_eps_ttm',
+            'QuarterlyEarningsGrowthYOY': 'quarterly_earnings_growth_yoy',
+            'QuarterlyRevenueGrowthYOY': 'quarterly_revenue_growth_yoy',
+            'AnalystTargetPrice': 'analyst_target_price',
+            'AnalystRatingStrongBuy': 'analyst_rating_strong_buy',
+            'AnalystRatingBuy': 'analyst_rating_buy',
+            'AnalystRatingHold': 'analyst_rating_hold',
+            'AnalystRatingSell': 'analyst_rating_sell',
+            'AnalystRatingStrongSell': 'analyst_rating_strong_sell',
+            'TrailingPE': 'trailing_pe',
+            'ForwardPE': 'forward_pe',
+            'PriceToSalesRatioTTM': 'price_to_sales_ratio_ttm',
+            'PriceToBookRatio': 'price_to_book_ratio',
+            'EVToRevenue': 'ev_to_revenue',
+            'EVToEBITDA': 'ev_to_ebitda',
+            'Beta': 'beta',
+            '52WeekHigh': 'week_52_high',
+            '52WeekLow': 'week_52_low',
+            '50DayMovingAverage': 'day_50_moving_average',
+            '200DayMovingAverage': 'day_200_moving_average',
+            'SharesOutstanding': 'shares_outstanding',
+            'DividendDate': 'dividend_date',
+            'ExDividendDate': 'ex_dividend_date'
+        }
+        
+        # 准备插入的字段和值
+        fields = ['ticker', 'last_updated']
+        values = [ticker, now]
+        
+        # 动态添加其他字段
+        for api_field, db_field in field_mapping.items():
+            if api_field in data:
+                fields.append(db_field)
+                # 尝试将数值字段转换为浮点数
+                if api_field in ['MarketCapitalization', 'EBITDA', 'PERatio', 'PEGRatio', 
+                                'BookValue', 'DividendPerShare', 'DividendYield', 'EPS',
+                                'RevenuePerShareTTM', 'ProfitMargin', 'OperatingMarginTTM',
+                                'ReturnOnAssetsTTM', 'ReturnOnEquityTTM', 'RevenueTTM',
+                                'GrossProfitTTM', 'DilutedEPSTTM', 'QuarterlyEarningsGrowthYOY',
+                                'QuarterlyRevenueGrowthYOY', 'AnalystTargetPrice',
+                                'AnalystRatingStrongBuy', 'AnalystRatingBuy', 'AnalystRatingHold',
+                                'AnalystRatingSell', 'AnalystRatingStrongSell',
+                                'TrailingPE', 'ForwardPE', 'PriceToSalesRatioTTM',
+                                'PriceToBookRatio', 'EVToRevenue', 'EVToEBITDA',
+                                'Beta', '52WeekHigh', '52WeekLow', '50DayMovingAverage',
+                                '200DayMovingAverage', 'SharesOutstanding']:
+                    try:
+                        values.append(float(data[api_field]))
+                    except (ValueError, TypeError):
+                        values.append(None)
+                else:
+                    values.append(data[api_field])
+        
+        # 构建SQL语句
+        placeholders = ', '.join(['?'] * len(fields))
+        fields_str = ', '.join(fields)
+        
+        # 使用INSERT OR REPLACE确保唯一性
+        sql = f"INSERT OR REPLACE INTO company_overview ({fields_str}) VALUES ({placeholders})"
+        
+        try:
+            cursor.execute(sql, values)
+            self.conn.commit()
+            return True
+        except Exception as e:
+            print(f"Error inserting company overview data: {e}")
+            return False
+
+    def get_company_overview(self, ticker):
+        """获取公司概览数据"""
+        cursor = self.conn.cursor()
+        
+        sql = "SELECT * FROM company_overview WHERE ticker = ?"
+        params = [ticker]
+        
+        cursor.execute(sql, params)
+        row = cursor.fetchone()
+        
+        if row:
+            return dict(row)
+        else:
+            return None
+
     # 价格数据方法
     def set_prices(self, ticker, data):
         """存储价格数据"""
