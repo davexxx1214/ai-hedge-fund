@@ -35,7 +35,10 @@ from src.tools.api_price import (
 
 from src.tools.api_financials import (
     get_financial_metrics,
-    search_line_items
+    search_line_items,
+    get_income_statement,  # 确保这些函数被导入
+    get_balance_sheet,     # 确保这些函数被导入
+    get_cash_flow          # 确保这些函数被导入
 )
 
 from src.tools.api_insider import (
@@ -73,6 +76,9 @@ __all__ = [
     # 财务指标相关API
     'get_financial_metrics',
     'search_line_items',
+    'get_income_statement',  # 添加这些新函数
+    'get_balance_sheet',     # 添加这些新函数
+    'get_cash_flow',         # 添加这些新函数
     
     # 内部交易相关API
     'get_insider_trades',

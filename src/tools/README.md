@@ -33,23 +33,53 @@
    - reportedCurrency: 报告货币
    - 各种现金流量表项目，如经营现金流、投资现金流、融资现金流等
 
-5. **insider_trades** - 存储内部交易数据
+5. **income_statement_quarterly** - 存储季度利润表数据
+   - ticker: 股票代码
+   - fiscalDateEnding: 财报日期
+   - reportedCurrency: 报告货币
+   - 各种利润表项目，如总收入、营业利润、净利润等
+
+6. **balance_sheet_quarterly** - 存储季度资产负债表数据
+   - ticker: 股票代码
+   - fiscalDateEnding: 财报日期
+   - reportedCurrency: 报告货币
+   - 各种资产负债表项目，如总资产、总负债、股东权益等
+
+7. **cash_flow_quarterly** - 存储季度现金流量表数据
+   - ticker: 股票代码
+   - fiscalDateEnding: 财报日期
+   - reportedCurrency: 报告货币
+   - 各种现金流量表项目，如经营现金流、投资现金流、融资现金流等
+
+8. **insider_trades** - 存储内部交易数据
    - ticker: 股票代码
    - transaction_date: 交易日期
    - name: 交易者姓名
    - title: 交易者职位
+   - is_board_director: 是否为董事会成员
    - transaction_shares: 交易股数
    - transaction_price_per_share: 每股交易价格
    - transaction_value: 交易总值
+   - shares_owned_before_transaction: 交易前持股数
+   - shares_owned_after_transaction: 交易后持股数
+   - security_title: 证券类型
+   - filing_date: 申报日期
 
-6. **company_news** - 存储公司新闻数据
+9. **company_news** - 存储公司新闻数据
    - ticker: 股票代码
    - date: 新闻日期
    - title: 新闻标题
    - author: 作者
+   - authors: 多位作者
    - source: 来源
    - url: 链接
    - sentiment: 情感分析得分
+   - summary: 新闻摘要
+   - banner_image: 横幅图片URL
+   - source_domain: 来源域名
+   - category_within_source: 来源内分类
+   - overall_sentiment_label: 整体情感标签
+   - topics: 主题（JSON字符串）
 
 ## 使用方法
 
@@ -77,8 +107,25 @@ sql_tools = get_sql_tools()
 prices = get_prices('AAPL', '2023-01-01', '2023-12-31')
 db_cache.set_prices('AAPL', prices)
 
-# 获取财务指标数据（同时会保存三张财务报表数据）
-metrics = get_financial_metrics('AAPL')
+# 获取并存储年度财务报表数据
+income_annual = get_income_statement('AAPL', period="annual")
+db_cache.set_income_statement_annual('AAPL', income_annual)
+
+balance_annual = get_balance_sheet('AAPL', period="annual")
+db_cache.set_balance_sheet_annual('AAPL', balance_annual)
+
+cashflow_annual = get_cash_flow('AAPL', period="annual")
+db_cache.set_cash_flow_annual('AAPL', cashflow_annual)
+
+# 获取并存储季度财务报表数据
+income_quarterly = get_income_statement('AAPL', period="quarterly")
+db_cache.set_income_statement_quarterly('AAPL', income_quarterly)
+
+balance_quarterly = get_balance_sheet('AAPL', period="quarterly")
+db_cache.set_balance_sheet_quarterly('AAPL', balance_quarterly)
+
+cashflow_quarterly = get_cash_flow('AAPL', period="quarterly")
+db_cache.set_cash_flow_quarterly('AAPL', cashflow_quarterly)
 
 # 存储公司新闻数据
 news = get_company_news('AAPL', '2023-12-31', '2023-01-01')
@@ -95,14 +142,23 @@ db_cache.set_insider_trades('AAPL', trades)
 # 查询价格数据
 prices = db.get_prices('AAPL', '2023-01-01', '2023-12-31')
 
-# 查询利润表数据
+# 查询年度利润表数据
 income_stmt = db.get_income_statement_annual('AAPL')
 
-# 查询资产负债表数据
+# 查询年度资产负债表数据
 balance_sheet = db.get_balance_sheet_annual('AAPL')
 
-# 查询现金流量表数据
+# 查询年度现金流量表数据
 cash_flow = db.get_cash_flow_annual('AAPL')
+
+# 查询季度利润表数据
+income_stmt_q = db.get_income_statement_quarterly('AAPL')
+
+# 查询季度资产负债表数据
+balance_sheet_q = db.get_balance_sheet_quarterly('AAPL')
+
+# 查询季度现金流量表数据
+cash_flow_q = db.get_cash_flow_quarterly('AAPL')
 
 # 查询内部交易数据
 trades = db.get_insider_trades('AAPL', '2023-01-01', '2023-12-31')
@@ -117,11 +173,15 @@ news = db.get_company_news('AAPL', '2023-01-01', '2023-12-31')
 # 获取价格历史数据并转换为DataFrame
 price_df = sql_tools.get_price_history('AAPL', '2023-01-01', '2023-12-31')
 
-# 获取财务指标历史数据
-metrics_df = sql_tools.get_financial_metrics_history('AAPL')
+# 获取年度财务数据
+income_annual_df = sql_tools.query_to_df("SELECT * FROM income_statement_annual WHERE ticker = 'AAPL' ORDER BY fiscalDateEnding DESC")
+balance_annual_df = sql_tools.query_to_df("SELECT * FROM balance_sheet_annual WHERE ticker = 'AAPL' ORDER BY fiscalDateEnding DESC")
+cashflow_annual_df = sql_tools.query_to_df("SELECT * FROM cash_flow_annual WHERE ticker = 'AAPL' ORDER BY fiscalDateEnding DESC")
 
-# 获取财务项目数据并透视为时间序列
-items_df = sql_tools.get_line_items_pivot('AAPL', ['revenue', 'net_income'])
+# 获取季度财务数据
+income_quarterly_df = sql_tools.query_to_df("SELECT * FROM income_statement_quarterly WHERE ticker = 'AAPL' ORDER BY fiscalDateEnding DESC")
+balance_quarterly_df = sql_tools.query_to_df("SELECT * FROM balance_sheet_quarterly WHERE ticker = 'AAPL' ORDER BY fiscalDateEnding DESC")
+cashflow_quarterly_df = sql_tools.query_to_df("SELECT * FROM cash_flow_quarterly WHERE ticker = 'AAPL' ORDER BY fiscalDateEnding DESC")
 
 # 获取内部交易汇总数据
 trades_df = sql_tools.get_insider_trades_summary('AAPL', '2023-01-01', '2023-12-31')
@@ -165,10 +225,15 @@ python src/tools/db_cli.py info --info-type ticker --ticker AAPL
 # 查询价格数据
 python src/tools/db_cli.py query --query-type prices --ticker AAPL --start-date 2023-01-01 --end-date 2023-12-31 --plot
 
-# 查询财务报表数据
-python src/tools/db_cli.py query --query-type income-statement --ticker AAPL
-python src/tools/db_cli.py query --query-type balance-sheet --ticker AAPL
-python src/tools/db_cli.py query --query-type cash-flow --ticker AAPL
+# 查询年度财务报表数据
+python src/tools/db_cli.py query --query-type income_annual --ticker AAPL
+python src/tools/db_cli.py query --query-type balance_annual --ticker AAPL
+python src/tools/db_cli.py query --query-type cashflow_annual --ticker AAPL
+
+# 查询季度财务报表数据
+python src/tools/db_cli.py query --query-type income_quarterly --ticker AAPL
+python src/tools/db_cli.py query --query-type balance_quarterly --ticker AAPL
+python src/tools/db_cli.py query --query-type cashflow_quarterly --ticker AAPL
 
 # 查询新闻数据
 python src/tools/db_cli.py query --query-type news --ticker AAPL
@@ -183,33 +248,6 @@ python src/tools/db_cli.py query --query-type correlation --tickers AAPL,MSFT,GO
 python src/tools/db_cli.py query --query-type custom --sql "SELECT * FROM prices WHERE ticker = 'AAPL' ORDER BY time DESC LIMIT 10"
 ```
 
-## 单元测试
-
-项目提供了一个单元测试脚本，用于测试 `get_financial_metrics` 函数的功能：
-
-```bash
-# 基本测试，不删除数据库和缓存
-python src/tools/unit_test_api.py
-
-# 使用不同的股票代码
-python src/tools/unit_test_api.py --ticker MSFT
-
-# 在测试前删除数据库文件
-python src/tools/unit_test_api.py --delete-db
-
-# 在测试前删除缓存文件
-python src/tools/unit_test_api.py --delete-cache
-
-# 在测试前同时删除数据库和缓存文件（推荐用于完整测试）
-python src/tools/unit_test_api.py --delete-db --delete-cache
-```
-
-测试脚本会：
-1. 调用 `get_financial_metrics` 函数获取指定股票的财务指标
-2. 打印获取到的财务指标数据
-3. 检查三张财务报表是否被正确保存到数据库
-4. 检查 JSON 缓存文件是否被正确创建
-
 ## 数据库文件
 
 数据库文件默认保存在 `src/data/finance.db`。您可以在创建数据库实例时指定不同的路径：
@@ -220,3 +258,13 @@ from pathlib import Path
 
 # 创建自定义路径的数据库实例
 custom_db = Database(db_path=Path("path/to/your/database.db"))
+```
+```
+
+主要更新内容：
+
+1. 移除了所有关于 financial_metrics 表的引用
+2. 更新了存储数据部分，使用六个独立的财务报表表替代原来的 financial_metrics
+3. 更新了查询数据部分，使用六个独立的财务报表表的查询方法
+4. 更新了 SQL 工具部分，使用直接查询六个财务报表表的方式
+5. 更新了命令行工具部分，使用新的查询类型名称

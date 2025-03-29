@@ -587,3 +587,87 @@ def search_line_items(ticker: str, line_items: list, end_date: str = None, perio
     except Exception as e:
         print(f"Error fetching line items for {ticker}: {str(e)}")
         return []
+
+def get_income_statement(ticker: str, period: str = "annual"):
+    """获取利润表数据
+    
+    Args:
+        ticker: 股票代码
+        period: 周期，可选 "annual" 或 "quarterly"，默认为 "annual"
+    
+    Returns:
+        利润表数据列表
+    """
+    check_rate_limit()
+    
+    try:
+        if period.lower() == "annual":
+            income_stmt, _ = fd.get_income_statement_annual(symbol=ticker)
+        else:
+            income_stmt, _ = fd.get_income_statement_quarterly(symbol=ticker)
+        
+        if len(income_stmt.index) == 0:
+            print(f"没有找到 {ticker} 的利润表数据")
+            return []
+        
+        # 转换为字典列表
+        return income_stmt.to_dict('records')
+    except Exception as e:
+        print(f"获取 {ticker} 的利润表数据时出错: {str(e)}")
+        return []
+
+def get_balance_sheet(ticker: str, period: str = "annual"):
+    """获取资产负债表数据
+    
+    Args:
+        ticker: 股票代码
+        period: 周期，可选 "annual" 或 "quarterly"，默认为 "annual"
+    
+    Returns:
+        资产负债表数据列表
+    """
+    check_rate_limit()
+    
+    try:
+        if period.lower() == "annual":
+            balance_sheet, _ = fd.get_balance_sheet_annual(symbol=ticker)
+        else:
+            balance_sheet, _ = fd.get_balance_sheet_quarterly(symbol=ticker)
+        
+        if len(balance_sheet.index) == 0:
+            print(f"没有找到 {ticker} 的资产负债表数据")
+            return []
+        
+        # 转换为字典列表
+        return balance_sheet.to_dict('records')
+    except Exception as e:
+        print(f"获取 {ticker} 的资产负债表数据时出错: {str(e)}")
+        return []
+
+def get_cash_flow(ticker: str, period: str = "annual"):
+    """获取现金流量表数据
+    
+    Args:
+        ticker: 股票代码
+        period: 周期，可选 "annual" 或 "quarterly"，默认为 "annual"
+    
+    Returns:
+        现金流量表数据列表
+    """
+    check_rate_limit()
+    
+    try:
+        if period.lower() == "annual":
+            cash_flow, _ = fd.get_cash_flow_annual(symbol=ticker)
+        else:
+            cash_flow, _ = fd.get_cash_flow_quarterly(symbol=ticker)
+        
+        if len(cash_flow.index) == 0:
+            print(f"没有找到 {ticker} 的现金流量表数据")
+            return []
+        
+        # 转换为字典列表
+        return cash_flow.to_dict('records')
+    except Exception as e:
+        print(f"获取 {ticker} 的现金流量表数据时出错: {str(e)}")
+        return []
