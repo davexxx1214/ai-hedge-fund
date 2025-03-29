@@ -71,15 +71,20 @@ def get_prices(ticker: str, start_date: str, end_date: str = None) -> list:
             # 获取美东时间
             eastern = timezone('US/Eastern')
             
-            current_system_datetime = datetime.now(eastern)
+            # 获取当前真实的美东时间
+            utc_time = get_network_time()
+            current_system_datetime = utc_time.astimezone(eastern)
+            
             if end_date:
                 provided_date = datetime.strptime(end_date, '%Y-%m-%d').date()
                 if provided_date == current_system_datetime.date():
                     current_date = provided_date
                     current_datetime = current_system_datetime
                 else:
+                    # 使用真实的当前时间，而不是23:59:59
                     current_date = provided_date
-                    current_datetime = eastern.localize(datetime.combine(provided_date, time(23, 59, 59)))
+                    current_time = current_system_datetime.time()
+                    current_datetime = eastern.localize(datetime.combine(provided_date, current_time))
             else:
                 current_datetime = current_system_datetime
                 current_date = current_system_datetime.date()
@@ -205,7 +210,8 @@ def get_prices(ticker: str, start_date: str, end_date: str = None) -> list:
     except Exception as e:
         print(f"Error fetching price data for {ticker}: {str(e)}")
         return []
-
+    
+    
 def prices_to_df(prices: list[dict]) -> pd.DataFrame:
     """将价格数据转换为 DataFrame
 

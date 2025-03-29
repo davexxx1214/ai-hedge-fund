@@ -59,15 +59,20 @@ def get_insider_trades(ticker: str, end_date: str, start_date: str = None, limit
             # 获取美东时间
             eastern = timezone('US/Eastern')
             
-            current_network_datetime = get_network_time().astimezone(eastern)
+            # 获取当前真实的美东时间
+            utc_time = get_network_time()
+            current_network_datetime = utc_time.astimezone(eastern)
+            
             if end_date:
                 provided_date = datetime.strptime(end_date, '%Y-%m-%d').date()
                 if provided_date == current_network_datetime.date():
                     current_date = provided_date
                     current_datetime = current_network_datetime
                 else:
+                    # 使用真实的当前时间，而不是23:59:59
                     current_date = provided_date
-                    current_datetime = eastern.localize(datetime.combine(provided_date, time(23, 59, 59)))
+                    current_time = current_network_datetime.time()
+                    current_datetime = eastern.localize(datetime.combine(provided_date, current_time))
             else:
                 current_datetime = current_network_datetime
                 current_date = current_network_datetime.date()
@@ -250,6 +255,7 @@ def get_insider_trades(ticker: str, end_date: str, start_date: str = None, limit
     except Exception as e:
         print(f"Error fetching insider trades for {ticker}: {str(e)}")
         return []
+    
 
 def calculate_business_days(start_date, end_date):
     """计算两个日期之间的工作日数量（不包括周末）"""
