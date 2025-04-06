@@ -8,17 +8,19 @@ This system employs several agents working together:
 2. Bill Ackman Agent - An activist investors, takes bold positions and pushes for change
 3. Cathie Wood Agent - The queen of growth investing, believes in the power of innovation and disruption
 4. Charlie Munger Agent - Warren Buffett's partner, only buys wonderful businesses at fair prices
-5. Phil Fisher Agent - Legendary growth investor who mastered scuttlebutt analysis
-6. Stanley Druckenmiller Agent - Macro legend who hunts for asymmetric opportunities with growth potential
-7. Warren Buffett Agent - The oracle of Omaha, seeks wonderful companies at a fair price
-8. Valuation Agent - Calculates the intrinsic value of a stock and generates trading signals
-9. Sentiment Agent - Analyzes market sentiment and generates trading signals
-10. Fundamentals Agent - Analyzes fundamental data and generates trading signals
-11. Technicals Agent - Analyzes technical indicators and generates trading signals
-12. Risk Manager - Calculates risk metrics and sets position limits
-13. Portfolio Manager - Makes final trading decisions and generates orders
+5. Peter Lynch Agent - Legendary growth investor who seeks "ten-baggers" and invests in what he knows
+6. Phil Fisher Agent - Legendary growth investor who mastered scuttlebutt analysis
+7. Stanley Druckenmiller Agent - Macro legend who hunts for asymmetric opportunities with growth potential
+8. Warren Buffett Agent - The oracle of Omaha, seeks wonderful companies at a fair price
+9. Valuation Agent - Calculates the intrinsic value of a stock and generates trading signals
+10. Sentiment Agent - Analyzes market sentiment and generates trading signals
+11. Fundamentals Agent - Analyzes fundamental data and generates trading signals
+12. Technicals Agent - Analyzes technical indicators and generates trading signals
+13. Risk Manager - Calculates risk metrics and sets position limits
+14. Portfolio Manager - Makes final trading decisions and generates orders
+    
+<img width="1042" alt="Screenshot 2025-03-22 at 6 19 07 PM" src="https://github.com/user-attachments/assets/cbae3dcf-b571-490d-b0ad-3f0f035ac0d4" />
 
-<img width="1020" alt="Screenshot 2025-03-08 at 4 45 22 PM" src="https://github.com/user-attachments/assets/d8ab891e-a083-4fed-b514-ccc9322a3e57" />
 
 **Note**: the system simulates trading decisions, it does not actually trade.
 
