@@ -261,9 +261,6 @@ python src/tools/db_cli.py info --info-type summary
 # 显示表结构
 python src/tools/db_cli.py info --info-type schema
 
-# 显示股票信息
-python src/tools/db_cli.py info --info-type ticker --ticker AAPL
-
 # 查询价格数据
 python src/tools/db_cli.py query --query-type prices --ticker AAPL --start-date 2023-01-01 --end-date 2023-12-31 --plot
 
