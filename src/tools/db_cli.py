@@ -372,7 +372,9 @@ def query_news(args):
     import pandas as pd # <-- Import inside function scope
     df = pd.DataFrame(data)
     print(f"\n{args.ticker} 的公司新闻数据 ({len(df)} 条记录):")
-    print(tabulate(df[['date', 'title', 'source', 'sentiment']].head(10), headers='keys', tablefmt='psql'))
+    # 使用新的列名 sentiment_score 替换旧的 sentiment
+    # 同时，数据库中没有 'source' 列了，改为显示 'source_domain'
+    print(tabulate(df[['date', 'title', 'source_domain', 'sentiment_score']].head(10), headers='keys', tablefmt='psql'))
 
 def query_trades(args):
     """查询内部交易数据"""

@@ -246,9 +246,17 @@ def get_insider_trades(ticker: str, end_date: str, start_date: str = None, limit
         if limit and len(formatted_trades) > limit:
             formatted_trades = formatted_trades[:limit]
         
-        # 保存到缓存
+        # 保存到内存和文件缓存
         cache.set_insider_trades(ticker, formatted_trades)
         save_to_file_cache('insider_trades', ticker, formatted_trades, cache_params)
+        
+        # 保存到数据库 (添加此步骤)
+        try:
+            db.set_insider_trades(ticker, formatted_trades)
+            print(f"成功将 {len(formatted_trades)} 条首次获取的 {ticker} 内部交易数据存入数据库。")
+        except Exception as db_err:
+            print(f"Error saving initial insider trades for {ticker} to database: {db_err}")
+            # 不中断流程
         
         print(f"\nDebug - Formatted {len(formatted_trades)} insider trades successfully")
         return formatted_trades
