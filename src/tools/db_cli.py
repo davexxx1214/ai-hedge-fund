@@ -6,7 +6,7 @@ SQLite数据库命令行工具，用于管理和查询股票金融数据
 import os
 import sys
 import argparse
-import pandas as pd
+import pandas as pd # <-- Ensure pandas is imported
 from datetime import datetime, timedelta
 import matplotlib.pyplot as plt
 import matplotlib
@@ -230,12 +230,21 @@ def query_data(args):
         if not args.ticker:
             print("错误: 需要指定股票代码 (--ticker)")
             return
+
+        # 查询前检查是否有新财报
+        try:
+            from src.tools.api_financials import check_and_update_financials
+            check_and_update_financials(args.ticker)
+        except Exception as e:
+            # print(f"检查更新财报失败: {e}") # Original
+            print(f"检查更新财报失败: 类型={type(e).__name__}, 错误={e}") # More specific error
         
         data = db.get_income_statement_annual(args.ticker)
         if not data:
             print(f"没有找到 {args.ticker} 的年度利润表数据")
             return
         
+        import pandas as pd # <-- Import inside function scope
         df = pd.DataFrame(data)
         print(f"\n{args.ticker} 的年度利润表数据 ({len(df)} 条记录):")
         print(tabulate(df[['fiscalDateEnding', 'totalRevenue', 'grossProfit', 'netIncome']].head(10), headers='keys', tablefmt='psql'))
@@ -245,12 +254,20 @@ def query_data(args):
         if not args.ticker:
             print("错误: 需要指定股票代码 (--ticker)")
             return
+
+        try:
+            from src.tools.api_financials import check_and_update_financials
+            check_and_update_financials(args.ticker)
+        except Exception as e:
+            # print(f"检查更新财报失败: {e}") # Original
+            print(f"检查更新财报失败: 类型={type(e).__name__}, 错误={e}") # More specific error
         
         data = db.get_balance_sheet_annual(args.ticker)
         if not data:
             print(f"没有找到 {args.ticker} 的年度资产负债表数据")
             return
         
+        import pandas as pd # <-- Import inside function scope
         df = pd.DataFrame(data)
         print(f"\n{args.ticker} 的年度资产负债表数据 ({len(df)} 条记录):")
         print(tabulate(df[['fiscalDateEnding', 'totalAssets', 'totalLiabilities', 'totalShareholderEquity']].head(10), headers='keys', tablefmt='psql'))
@@ -260,12 +277,20 @@ def query_data(args):
         if not args.ticker:
             print("错误: 需要指定股票代码 (--ticker)")
             return
+
+        try:
+            from src.tools.api_financials import check_and_update_financials
+            check_and_update_financials(args.ticker)
+        except Exception as e:
+            # print(f"检查更新财报失败: {e}") # Original
+            print(f"检查更新财报失败: 类型={type(e).__name__}, 错误={e}") # More specific error
         
         data = db.get_cash_flow_annual(args.ticker)
         if not data:
             print(f"没有找到 {args.ticker} 的年度现金流量表数据")
             return
         
+        import pandas as pd # <-- Import inside function scope
         df = pd.DataFrame(data)
         print(f"\n{args.ticker} 的年度现金流量表数据 ({len(df)} 条记录):")
         print(tabulate(df[['fiscalDateEnding', 'operatingCashflow', 'cashflowFromInvestment', 'cashflowFromFinancing']].head(10), headers='keys', tablefmt='psql'))
@@ -275,12 +300,20 @@ def query_data(args):
         if not args.ticker:
             print("错误: 需要指定股票代码 (--ticker)")
             return
+
+        try:
+            from src.tools.api_financials import check_and_update_financials
+            check_and_update_financials(args.ticker)
+        except Exception as e:
+            # print(f"检查更新财报失败: {e}") # Original
+            print(f"检查更新财报失败: 类型={type(e).__name__}, 错误={e}") # More specific error
         
         data = db.get_income_statement_quarterly(args.ticker)
         if not data:
             print(f"没有找到 {args.ticker} 的季度利润表数据")
             return
         
+        import pandas as pd # <-- Import inside function scope
         df = pd.DataFrame(data)
         print(f"\n{args.ticker} 的季度利润表数据 ({len(df)} 条记录):")
         print(tabulate(df[['fiscalDateEnding', 'totalRevenue', 'grossProfit', 'netIncome']].head(10), headers='keys', tablefmt='psql'))
@@ -290,12 +323,20 @@ def query_data(args):
         if not args.ticker:
             print("错误: 需要指定股票代码 (--ticker)")
             return
+
+        try:
+            from src.tools.api_financials import check_and_update_financials
+            check_and_update_financials(args.ticker)
+        except Exception as e:
+            # print(f"检查更新财报失败: {e}") # Original
+            print(f"检查更新财报失败: 类型={type(e).__name__}, 错误={e}") # More specific error
         
         data = db.get_balance_sheet_quarterly(args.ticker)
         if not data:
             print(f"没有找到 {args.ticker} 的季度资产负债表数据")
             return
         
+        import pandas as pd # <-- Import inside function scope
         df = pd.DataFrame(data)
         print(f"\n{args.ticker} 的季度资产负债表数据 ({len(df)} 条记录):")
 
@@ -311,6 +352,7 @@ def query_cashflow_quarterly(args):
         print(f"没有找到 {args.ticker} 的季度现金流量表数据")
         return
     
+    import pandas as pd # <-- Import inside function scope
     df = pd.DataFrame(data)
     print(f"\n{args.ticker} 的季度现金流量表数据 ({len(df)} 条记录):")
     print(tabulate(df[['fiscalDateEnding', 'operatingCashflow', 'cashflowFromInvestment', 'cashflowFromFinancing']].head(10), headers='keys', tablefmt='psql'))
@@ -327,6 +369,7 @@ def query_news(args):
         print(f"没有找到 {args.ticker} 的公司新闻数据")
         return
     
+    import pandas as pd # <-- Import inside function scope
     df = pd.DataFrame(data)
     print(f"\n{args.ticker} 的公司新闻数据 ({len(df)} 条记录):")
     print(tabulate(df[['date', 'title', 'source', 'sentiment']].head(10), headers='keys', tablefmt='psql'))
@@ -343,6 +386,7 @@ def query_trades(args):
         print(f"没有找到 {args.ticker} 的内部交易数据")
         return
     
+    import pandas as pd # <-- Import inside function scope
     df = pd.DataFrame(data)
     print(f"\n{args.ticker} 的内部交易数据 ({len(df)} 条记录):")
     print(tabulate(df[['date', 'insider_name', 'insider_title', 'transaction_shares', 'price', 'value']].head(10), headers='keys', tablefmt='psql'))

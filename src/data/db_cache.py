@@ -1,6 +1,7 @@
 """
 数据库缓存模块，将SQLite数据库与现有缓存系统集成
 """
+import pandas as pd # <-- Revert to standard import
 
 from src.data.cache import Cache, get_cache
 from src.data.database import get_db
@@ -48,12 +49,24 @@ class DBCache(Cache):
         
         # 如果内存缓存没有，则从数据库获取
         db_data = self.db.get_prices(ticker)
-        if db_data is not None and len(db_data) > 0:  # 修改这里的判断条件
-            # 转换DataFrame为字典列表并更新缓存
-            data_list = db_data.to_dict('records')
-            super().set_prices(ticker, data_list)
-            return data_list
-        
+        # --- Start Modification ---
+        if db_data is not None:
+            import pandas as pd # <-- Import directly before use for safety
+            if isinstance(db_data, pd.DataFrame):
+                if len(db_data) > 0:
+                    data_list = db_data.to_dict('records')
+                    super().set_prices(ticker, data_list) # Update cache
+                    return data_list
+                else:
+                    return [] # Return empty list for empty DataFrame
+            elif isinstance(db_data, list):
+                 # If db already returns a list, use it directly
+                 super().set_prices(ticker, db_data) # Update cache
+                 return db_data
+            else:
+                 print(f"Warning: Unexpected data type from db.get_prices: {type(db_data)}")
+                 return None
+        # --- End Modification ---
         return None
     
     def set_prices(self, ticker: str, data: list[dict[str, any]]):
@@ -72,12 +85,24 @@ class DBCache(Cache):
         
         # 如果内存缓存没有，则从数据库获取
         db_data = self.db.get_income_statement_annual(ticker)
-        if db_data is not None and len(db_data) > 0:  # 修改这里的判断条件
-            # 转换DataFrame为字典列表并更新缓存
-            data_list = db_data.to_dict('records')
-            super().set_income_statement_annual(ticker, data_list)
-            return data_list
-        
+        # --- Start Modification ---
+        if db_data is not None:
+            import pandas as pd # <-- Import directly before use for safety
+            if isinstance(db_data, pd.DataFrame):
+                if len(db_data) > 0:
+                    data_list = db_data.to_dict('records')
+                    super().set_income_statement_annual(ticker, data_list) # Update cache
+                    return data_list
+                else:
+                    return [] # Return empty list for empty DataFrame
+            elif isinstance(db_data, list):
+                 # If db already returns a list, use it directly
+                 super().set_income_statement_annual(ticker, db_data) # Update cache
+                 return db_data
+            else:
+                 print(f"Warning: Unexpected data type from db.get_income_statement_annual: {type(db_data)}")
+                 return None
+        # --- End Modification ---
         return None
     
     def set_income_statement_annual(self, ticker: str, data: list[dict[str, any]]):
@@ -96,12 +121,24 @@ class DBCache(Cache):
         
         # 如果内存缓存没有，则从数据库获取
         db_data = self.db.get_balance_sheet_annual(ticker)
-        if db_data is not None and len(db_data) > 0:  # 修改这里的判断条件
-            # 转换DataFrame为字典列表并更新缓存
-            data_list = db_data.to_dict('records')
-            super().set_balance_sheet_annual(ticker, data_list)
-            return data_list
-        
+        # --- Start Modification ---
+        if db_data is not None:
+            import pandas as pd # <-- Import directly before use for safety
+            if isinstance(db_data, pd.DataFrame):
+                if len(db_data) > 0:
+                    data_list = db_data.to_dict('records')
+                    super().set_balance_sheet_annual(ticker, data_list) # Update cache
+                    return data_list
+                else:
+                    return [] # Return empty list for empty DataFrame
+            elif isinstance(db_data, list):
+                 # If db already returns a list, use it directly
+                 super().set_balance_sheet_annual(ticker, db_data) # Update cache
+                 return db_data
+            else:
+                 print(f"Warning: Unexpected data type from db.get_balance_sheet_annual: {type(db_data)}")
+                 return None
+        # --- End Modification ---
         return None
     
     def set_balance_sheet_annual(self, ticker: str, data: list[dict[str, any]]):
@@ -120,12 +157,24 @@ class DBCache(Cache):
         
         # 如果内存缓存没有，则从数据库获取
         db_data = self.db.get_cash_flow_annual(ticker)
-        if db_data is not None and len(db_data) > 0:  # 修改这里的判断条件
-            # 转换DataFrame为字典列表并更新缓存
-            data_list = db_data.to_dict('records')
-            super().set_cash_flow_annual(ticker, data_list)
-            return data_list
-        
+        # --- Start Modification ---
+        if db_data is not None:
+            import pandas as pd # <-- Import directly before use for safety
+            if isinstance(db_data, pd.DataFrame):
+                if len(db_data) > 0:
+                    data_list = db_data.to_dict('records')
+                    super().set_cash_flow_annual(ticker, data_list) # Update cache
+                    return data_list
+                else:
+                    return [] # Return empty list for empty DataFrame
+            elif isinstance(db_data, list):
+                 # If db already returns a list, use it directly
+                 super().set_cash_flow_annual(ticker, db_data) # Update cache
+                 return db_data
+            else:
+                 print(f"Warning: Unexpected data type from db.get_cash_flow_annual: {type(db_data)}")
+                 return None
+        # --- End Modification ---
         return None
     
     def set_cash_flow_annual(self, ticker: str, data: list[dict[str, any]]):
@@ -213,12 +262,24 @@ class DBCache(Cache):
         
         # 如果内存缓存没有，则从数据库获取
         db_data = self.db.get_insider_trades(ticker)
-        if db_data is not None and len(db_data) > 0:  # 修改这里的判断条件
-            # 转换DataFrame为字典列表并更新缓存
-            data_list = db_data.to_dict('records')
-            super().set_insider_trades(ticker, data_list)
-            return data_list
-        
+        # --- Start Modification ---
+        if db_data is not None:
+            import pandas as pd # <-- Import directly before use for safety
+            if isinstance(db_data, pd.DataFrame):
+                if len(db_data) > 0:
+                    data_list = db_data.to_dict('records')
+                    super().set_insider_trades(ticker, data_list) # Update cache
+                    return data_list
+                else:
+                    return [] # Return empty list for empty DataFrame
+            elif isinstance(db_data, list):
+                 # If db already returns a list, use it directly
+                 super().set_insider_trades(ticker, db_data) # Update cache
+                 return db_data
+            else:
+                 print(f"Warning: Unexpected data type from db.get_insider_trades: {type(db_data)}")
+                 return None
+        # --- End Modification ---
         return None
     
     def set_insider_trades(self, ticker: str, data: list[dict[str, any]]):
@@ -237,12 +298,24 @@ class DBCache(Cache):
         
         # 如果内存缓存没有，则从数据库获取
         db_data = self.db.get_company_news(ticker)
-        if db_data is not None and len(db_data) > 0:  # 修改这里的判断条件
-            # 转换DataFrame为字典列表并更新缓存
-            data_list = db_data.to_dict('records')
-            super().set_company_news(ticker, data_list)
-            return data_list
-        
+        # --- Start Modification ---
+        if db_data is not None:
+            import pandas as pd # <-- Import directly before use for safety
+            if isinstance(db_data, pd.DataFrame):
+                if len(db_data) > 0:
+                    data_list = db_data.to_dict('records')
+                    super().set_company_news(ticker, data_list) # Update cache
+                    return data_list
+                else:
+                    return [] # Return empty list for empty DataFrame
+            elif isinstance(db_data, list):
+                 # If db already returns a list, use it directly
+                 super().set_company_news(ticker, db_data) # Update cache
+                 return db_data
+            else:
+                 print(f"Warning: Unexpected data type from db.get_company_news: {type(db_data)}")
+                 return None
+        # --- End Modification ---
         return None
     
     def set_company_news(self, ticker: str, data: list[dict[str, any]]):

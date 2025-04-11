@@ -72,6 +72,7 @@ FIELD_MAPPING = {
 }
 
 def calculate_growth(df, column_name):
+    import pandas as pd # <-- Add import inside function
     """计算增长率, 用于收入、净利润、股东权益等数据"""
     try:
         if column_name not in df.columns.tolist() or len(df) < 2:

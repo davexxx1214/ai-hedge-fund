@@ -287,6 +287,15 @@ if __name__ == "__main__":
         }
     }
 
+    # 在运行前，检查每个股票的EARNINGS缓存和新财报
+    try:
+        from src.tools.api_financials import check_and_update_financials
+        for ticker in tickers:
+            print(f"检查 {ticker} 是否有新财报...")
+            check_and_update_financials(ticker)
+    except Exception as e:
+        print(f"检查更新财报失败: {e}")
+
     # Run the hedge fund
     result = run_hedge_fund(
         tickers=tickers,

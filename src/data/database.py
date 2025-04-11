@@ -381,25 +381,25 @@ class Database:
         )
         ''')
         
-        # 创建公司新闻表
+        # 创建公司新闻表 (修订版)
         cursor.execute('''
         CREATE TABLE IF NOT EXISTS company_news (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             ticker TEXT NOT NULL,
-            title TEXT NOT NULL,
-            author TEXT,
-            authors TEXT,  -- 添加authors字段
-            source TEXT,
+            url TEXT NOT NULL,
             date TEXT NOT NULL,
-            url TEXT,
-            sentiment REAL,
-            summary TEXT,  -- 添加summary字段
-            banner_image TEXT,  -- 添加banner_image字段
-            source_domain TEXT,  -- 添加source_domain字段
-            category_within_source TEXT,  -- 添加category_within_source字段
-            overall_sentiment_label TEXT,  -- 添加overall_sentiment_label字段
-            topics TEXT,  -- 添加topics字段，存储为JSON字符串
-            UNIQUE(ticker, title, date)
+            time_published_raw TEXT, -- 存储原始的 time_published 字段
+            title TEXT,
+            summary TEXT,
+            sentiment_score REAL,
+            sentiment_label TEXT, -- 对应 overall_sentiment_label
+            author TEXT, -- 对应 CompanyNews.author (处理后的 authors 列表)
+            topics TEXT, -- 对应 CompanyNews.topics (处理后的 topics 列表)
+            source_domain TEXT,
+            banner_image TEXT,
+            category_within_source TEXT,
+            fetched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(ticker, url) -- 使用 ticker 和 url 作为唯一约束
         )
         ''')
         
@@ -419,17 +419,74 @@ class Database:
             cursor.execute("PRAGMA table_info(company_news)")
             columns = [column[1] for column in cursor.fetchall()]
             
-            # 添加缺失的列
-            if 'overall_sentiment_label' not in columns:
-                cursor.execute("ALTER TABLE company_news ADD COLUMN overall_sentiment_label TEXT")
-                print("添加列: overall_sentiment_label")
+            # --- 更新表结构逻辑调整 ---
+            # (移除错误的 ADD COLUMN overall_sentiment_label 行)
+
+            # 检查 url 列是否存在
+            if 'url' not in columns:
+                try:
+                    cursor.execute("ALTER TABLE company_news ADD COLUMN url TEXT")
+                    print("添加列: url")
+                except sqlite3.OperationalError as e:
+                    print(f"添加 url 列失败 (可能已存在): {e}")
+
+            # 检查 sentiment_score 列是否存在 (替换旧的 sentiment)
+            if 'sentiment_score' not in columns and 'sentiment' in columns:
+                 try:
+                    cursor.execute("ALTER TABLE company_news RENAME COLUMN sentiment TO sentiment_score")
+                    print("重命名列: sentiment -> sentiment_score")
+                 except sqlite3.OperationalError as e:
+                    print(f"重命名 sentiment 列失败: {e}")
+            elif 'sentiment_score' not in columns:
+                 try:
+                    cursor.execute("ALTER TABLE company_news ADD COLUMN sentiment_score REAL")
+                    print("添加列: sentiment_score")
+                 except sqlite3.OperationalError as e:
+                    print(f"添加 sentiment_score 列失败: {e}")
+
+            # 检查 sentiment_label 列是否存在 (替换旧的 overall_sentiment_label)
+            if 'sentiment_label' not in columns and 'overall_sentiment_label' in columns:
+                 try:
+                    cursor.execute("ALTER TABLE company_news RENAME COLUMN overall_sentiment_label TO sentiment_label")
+                    print("重命名列: overall_sentiment_label -> sentiment_label")
+                 except sqlite3.OperationalError as e:
+                    print(f"重命名 overall_sentiment_label 列失败: {e}")
+            elif 'sentiment_label' not in columns:
+                 try:
+                    cursor.execute("ALTER TABLE company_news ADD COLUMN sentiment_label TEXT")
+                    print("添加列: sentiment_label")
+                 except sqlite3.OperationalError as e:
+                    print(f"添加 sentiment_label 列失败: {e}")
+
+            # 检查 time_published_raw 列
+            if 'time_published_raw' not in columns:
+                 try:
+                    cursor.execute("ALTER TABLE company_news ADD COLUMN time_published_raw TEXT")
+                    print("添加列: time_published_raw")
+                 except sqlite3.OperationalError as e:
+                    print(f"添加 time_published_raw 列失败: {e}")
+
+            # 检查 fetched_at 列
+            if 'fetched_at' not in columns:
+                 try:
+                    cursor.execute("ALTER TABLE company_news ADD COLUMN fetched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
+                    print("添加列: fetched_at")
+                 except sqlite3.OperationalError as e:
+                    print(f"添加 fetched_at 列失败: {e}")
             
-            if 'topics' not in columns:
-                cursor.execute("ALTER TABLE company_news ADD COLUMN topics TEXT")
-                print("添加列: topics")
-        
+            # 检查并可能重建唯一索引 (如果旧的 UNIQUE(ticker, title, date) 存在)
+            # 注意：直接修改 UNIQUE 约束比较复杂，通常需要重建表。
+            # 这里简化处理，假设旧约束不存在或不影响新约束的添加。
+            # 如果需要严格处理，需要更复杂的迁移逻辑。
+            try:
+                # 尝试创建新的唯一索引 (如果不存在)
+                cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_company_news_ticker_url ON company_news (ticker, url)")
+                print("确保唯一索引 idx_company_news_ticker_url 存在")
+            except sqlite3.OperationalError as e:
+                print(f"创建唯一索引 idx_company_news_ticker_url 失败 (可能已存在或冲突): {e}")
+
         self.conn.commit()
-    
+
     def close(self):
         """关闭数据库连接"""
         try:
@@ -632,19 +689,34 @@ class Database:
         """存储年度利润表数据"""
         cursor = self.conn.cursor()
         
-        # 如果data是pandas DataFrame，转换为字典列表
-        if hasattr(data, 'to_dict'):
-            data_list = data.to_dict('records')
-        else:
-            data_list = data
+        # --- Removed incorrect hasattr check ---
+        # data should already be list[dict] as per caller (api_financials.py)
+        data_list = data
+        # --- End Removal ---
+
+        # 允许的字段，避免非法字段导致错误
+        allowed_fields = {
+            'fiscalDateEnding', 'reportedCurrency', 'grossProfit', 'totalRevenue', 'costOfRevenue',
+            'costofGoodsAndServicesSold', 'operatingIncome', 'sellingGeneralAndAdministrative',
+            'researchAndDevelopment', 'operatingExpenses', 'investmentIncomeNet', 'netInterestIncome',
+            'interestIncome', 'interestExpense', 'nonInterestIncome', 'otherNonOperatingIncome',
+            'depreciation', 'depreciationAndAmortization', 'incomeBeforeTax', 'incomeTaxExpense',
+            'interestAndDebtExpense', 'netIncomeFromContinuingOperations', 'comprehensiveIncomeNetOfTax',
+            'ebit', 'ebitda', 'netIncome'
+        }
         
         for item in data_list:
             # 准备插入的字段
             fields = ['ticker']
             values = [ticker]
             
-            # 动态添加其他字段
+            # 动态添加其他字段，过滤非法字段
             for key, value in item.items():
+                if key not in allowed_fields:
+                    continue
+                # 复杂类型转字符串
+                if isinstance(value, (dict, list)):
+                    value = json.dumps(value, ensure_ascii=False)
                 fields.append(key)
                 values.append(value)
             
@@ -658,7 +730,7 @@ class Database:
             try:
                 cursor.execute(sql, values)
             except Exception as e:
-                print(f"Error inserting income statement annual: {e}")
+                print(f"Error inserting income statement annual: {e}\nSQL: {sql}\nValues: {values}")
         
         self.conn.commit()
     
@@ -691,11 +763,10 @@ class Database:
         """存储年度资产负债表数据"""
         cursor = self.conn.cursor()
         
-        # 如果data是pandas DataFrame，转换为字典列表
-        if hasattr(data, 'to_dict'):
-            data_list = data.to_dict('records')
-        else:
-            data_list = data
+        # --- Removed incorrect hasattr check ---
+        # data should already be list[dict] as per caller (api_financials.py)
+        data_list = data
+        # --- End Removal ---
         
         for item in data_list:
             # 准备插入的字段
@@ -750,11 +821,10 @@ class Database:
         """存储年度现金流量表数据"""
         cursor = self.conn.cursor()
         
-        # 如果data是pandas DataFrame，转换为字典列表
-        if hasattr(data, 'to_dict'):
-            data_list = data.to_dict('records')
-        else:
-            data_list = data
+        # --- Removed incorrect hasattr check ---
+        # data should already be list[dict] as per caller (api_financials.py)
+        data_list = data
+        # --- End Removal ---
         
         for item in data_list:
             # 准备插入的字段
@@ -809,11 +879,10 @@ class Database:
         """存储季度利润表数据"""
         cursor = self.conn.cursor()
         
-        # 如果data是pandas DataFrame，转换为字典列表
-        if hasattr(data, 'to_dict'):
-            data_list = data.to_dict('records')
-        else:
-            data_list = data
+        # --- Removed incorrect hasattr check ---
+        # data should already be list[dict] as per caller (api_financials.py)
+        data_list = data
+        # --- End Removal ---
         
         for item in data_list:
             # 准备插入的字段
@@ -868,11 +937,10 @@ class Database:
         """存储季度资产负债表数据"""
         cursor = self.conn.cursor()
         
-        # 如果data是pandas DataFrame，转换为字典列表
-        if hasattr(data, 'to_dict'):
-            data_list = data.to_dict('records')
-        else:
-            data_list = data
+        # --- Removed incorrect hasattr check ---
+        # data should already be list[dict] as per caller (api_financials.py)
+        data_list = data
+        # --- End Removal ---
         
         for item in data_list:
             # 准备插入的字段
@@ -927,11 +995,10 @@ class Database:
         """存储季度现金流量表数据"""
         cursor = self.conn.cursor()
         
-        # 如果data是pandas DataFrame，转换为字典列表
-        if hasattr(data, 'to_dict'):
-            data_list = data.to_dict('records')
-        else:
-            data_list = data
+        # --- Removed incorrect hasattr check ---
+        # data should already be list[dict] as per caller (api_financials.py)
+        data_list = data
+        # --- End Removal ---
         
         for item in data_list:
             # 准备插入的字段
@@ -1087,43 +1154,66 @@ class Database:
         
         return result
     
-    # 公司新闻方法
-    def set_company_news(self, ticker, data):
-        """存储公司新闻数据"""
+    # 公司新闻方法 (修订版)
+    def set_company_news(self, ticker: str, news_list: list):
+        """
+        存储公司新闻数据 (来自 CompanyNews 对象列表) 到数据库。
+        使用 INSERT OR IGNORE 避免插入重复记录 (基于 ticker 和 url)。
+        """
+        if not news_list:
+            return
+
         cursor = self.conn.cursor()
+        insert_sql = """
+        INSERT OR IGNORE INTO company_news (
+            ticker, url, date, time_published_raw, title, summary, 
+            sentiment_score, sentiment_label, author, topics, 
+            source_domain, banner_image, category_within_source
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """
         
-        for item in data:
-            # 获取item的数据，支持字典和对象两种情况
-            if hasattr(item, 'model_dump'):
-                item_data = item.model_dump()
-            elif hasattr(item, '__dict__'):
-                item_data = item.__dict__
-            else:
-                item_data = item
+        rows_to_insert = []
+        for news_item in news_list:
+            # 确保是 CompanyNews 对象或类似结构
+            if not hasattr(news_item, 'url') or not news_item.url:
+                print(f"Skipping news item for {ticker} due to missing URL: {getattr(news_item, 'title', 'N/A')}")
+                continue
+
+            # 从 CompanyNews 对象提取数据
+            # 注意：需要访问原始 time_published，但 CompanyNews 类目前不直接存储它
+            # 我们需要从原始 kwargs 获取，或者修改 CompanyNews 类
+            # 暂时假设 news_item.__dict__ 包含原始 kwargs 或类似信息
+            raw_data = news_item.__dict__ # 这是一个简化假设
             
-            # 准备插入的字段
-            fields = ['ticker']
-            values = [ticker]
-            
-            # 动态添加其他字段
-            for key, value in item_data.items():
-                fields.append(key)
-                values.append(value)
-            
-            # 构建SQL语句
-            placeholders = ', '.join(['?'] * len(fields))
-            fields_str = ', '.join(fields)
-            
-            # 使用INSERT OR REPLACE确保唯一性
-            sql = f"INSERT OR REPLACE INTO company_news ({fields_str}) VALUES ({placeholders})"
-            
+            row = (
+                ticker,
+                getattr(news_item, 'url', None), # 使用 getattr 以防万一
+                getattr(news_item, 'date', None),
+                raw_data.get('time_published', None), # 尝试获取原始 time_published
+                getattr(news_item, 'title', None),
+                getattr(news_item, 'summary', None),
+                getattr(news_item, 'sentiment', None), # 对应 sentiment_score
+                getattr(news_item, 'overall_sentiment_label', None), # 对应 sentiment_label
+                getattr(news_item, 'author', None),
+                getattr(news_item, 'topics', None),
+                getattr(news_item, 'source_domain', None),
+                getattr(news_item, 'banner_image', None),
+                getattr(news_item, 'category_within_source', None)
+            )
+            rows_to_insert.append(row)
+
+        if rows_to_insert:
             try:
-                cursor.execute(sql, values)
+                cursor.executemany(insert_sql, rows_to_insert)
+                self.conn.commit()
+                print(f"成功插入或忽略了 {len(rows_to_insert)} 条 {ticker} 的新闻记录。")
+            except sqlite3.Error as e:
+                print(f"批量插入 {ticker} 新闻数据时出错: {e}")
+                self.conn.rollback() # 出错时回滚
             except Exception as e:
-                print(f"Error inserting company news: {e}")
-        
-        self.conn.commit()
-    
+                print(f"处理 {ticker} 新闻数据时发生意外错误: {e}")
+                self.conn.rollback()
+
     def get_company_news(self, ticker, start_date=None, end_date=None):
         """获取公司新闻数据"""
         cursor = self.conn.cursor()

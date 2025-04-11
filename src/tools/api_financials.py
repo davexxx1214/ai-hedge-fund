@@ -15,6 +15,7 @@ from src.data.cache import get_cache
 cache = get_cache()
 
 def get_financial_metrics(ticker: str, end_date: str = None, period: str = "ttm", limit: int = 10) -> list:
+    import pandas as pd # <-- Add import inside function
     """使用 Alpha Vantage 获取公司财务指标数据
 
     通过 FundamentalData 接口获取公司概览、年报数据，并计算各项财务比率和增长率。
@@ -37,113 +38,232 @@ def get_financial_metrics(ticker: str, end_date: str = None, period: str = "ttm"
         # 获取公司概览数据
         try:
             overview, _ = fd.get_company_overview(symbol=ticker)
-            if len(overview.index) == 0:
-                raise ValueError("Empty overview data")
+            if isinstance(overview, list): # <--- 新增检查
+                print(f"Warning: fd.get_company_overview returned a list, expected DataFrame. Resetting.")
+                overview = pd.DataFrame()
+            elif not isinstance(overview, pd.DataFrame):
+                print(f"Warning: fd.get_company_overview returned type {type(overview)}, expected DataFrame. Resetting.")
+                overview = pd.DataFrame()
         except Exception as e:
             print(f"Error getting company overview: {str(e)}")
-            overview = pd.DataFrame()
-        
+            overview = pd.DataFrame() # Ensure it's a DataFrame on error
+        print("DEBUG: Fetched overview") # <-- Add Debug Print
+
         # 获取并保存利润表（年报）数据
+        print("DEBUG: Fetching income statement annual...") # <-- Add Debug Print
         check_rate_limit()
         try:
             income_stmt, _ = fd.get_income_statement_annual(symbol=ticker)
-            if len(income_stmt.index) == 0:
-                raise ValueError("Empty income statement data")
+            if isinstance(income_stmt, list): # <--- 新增检查
+                print(f"Warning: fd.get_income_statement_annual returned a list, expected DataFrame. Resetting.")
+                income_stmt = pd.DataFrame()
+            elif not isinstance(income_stmt, pd.DataFrame):
+                print(f"Warning: fd.get_income_statement_annual returned type {type(income_stmt)}, expected DataFrame. Resetting.")
+                income_stmt = pd.DataFrame()
         except Exception as e:
             print(f"Error getting income statement: {str(e)}")
-            income_stmt = pd.DataFrame()
-        
+            income_stmt = pd.DataFrame() # Ensure it's a DataFrame on error
+
         # 保存利润表数据到数据库和JSON文件
-        if len(income_stmt.index) > 0:
-            income_stmt_dict = income_stmt.to_dict('records')
-            db_cache.set_income_statement_annual(ticker, income_stmt_dict)
-            save_to_file_cache('income_statement_annual', ticker, income_stmt_dict, cache_params)
-            print(f"已保存 {ticker} 的利润表（年报）数据，共 {len(income_stmt)} 条记录")
-        
+        if isinstance(income_stmt, pd.DataFrame) and len(income_stmt.index) > 0:
+            try:
+                # --- Start Detailed Exception Handling ---
+                try:
+                    income_stmt_dict = income_stmt.to_dict('records')
+                except AttributeError as to_dict_ae:
+                    print(f"CRITICAL: Failed .to_dict() on income_stmt (annual). Type was: {type(income_stmt)}. Error: {to_dict_ae}")
+                    raise # Re-raise the specific error to be caught by outer blocks if needed
+                # --- End Detailed Exception Handling ---
+                db_cache.set_income_statement_annual(ticker, income_stmt_dict)
+                save_to_file_cache('income_statement_annual', ticker, income_stmt_dict, cache_params)
+                print(f"已保存 {ticker} 的利润表（年报）数据，共 {len(income_stmt)} 条记录")
+            except AttributeError as ae: # Catch re-raised error or other AttributeErrors
+                 print(f"AttributeError saving income statement annual: {ae}. Data type was {type(income_stmt)}")
+            except Exception as e:
+                print(f"Error saving income statement annual: {e}")
+        else:
+             print(f"Skipping save for income statement annual due to empty or invalid data (type: {type(income_stmt)}).")
+        print("DEBUG: Processed income statement annual") # <-- Add Debug Print
+
         # 获取并保存利润表（季度）数据
+        print("DEBUG: Fetching income statement quarterly...") # <-- Add Debug Print
         check_rate_limit()
         try:
             income_stmt_quarterly, _ = fd.get_income_statement_quarterly(symbol=ticker)
-            if len(income_stmt_quarterly.index) == 0:
-                raise ValueError("Empty quarterly income statement data")
+            if isinstance(income_stmt_quarterly, list): # <--- 新增检查
+                print(f"Warning: fd.get_income_statement_quarterly returned a list, expected DataFrame. Resetting.")
+                income_stmt_quarterly = pd.DataFrame()
+            elif not isinstance(income_stmt_quarterly, pd.DataFrame):
+                print(f"Warning: fd.get_income_statement_quarterly returned type {type(income_stmt_quarterly)}, expected DataFrame. Resetting.")
+                income_stmt_quarterly = pd.DataFrame()
         except Exception as e:
             print(f"Error getting quarterly income statement: {str(e)}")
-            income_stmt_quarterly = pd.DataFrame()
-        
+            income_stmt_quarterly = pd.DataFrame() # Ensure it's a DataFrame on error
+
         # 保存季度利润表数据到数据库和JSON文件
-        if len(income_stmt_quarterly.index) > 0:
-            income_stmt_quarterly_dict = income_stmt_quarterly.to_dict('records')
-            db_cache.set_income_statement_quarterly(ticker, income_stmt_quarterly_dict)
-            save_to_file_cache('income_statement_quarterly', ticker, income_stmt_quarterly_dict, cache_params)
-            print(f"已保存 {ticker} 的利润表（季度）数据，共 {len(income_stmt_quarterly)} 条记录")
-        
+        if isinstance(income_stmt_quarterly, pd.DataFrame) and len(income_stmt_quarterly.index) > 0:
+            try:
+                # --- Start Detailed Exception Handling ---
+                try:
+                    income_stmt_quarterly_dict = income_stmt_quarterly.to_dict('records')
+                except AttributeError as to_dict_ae:
+                    print(f"CRITICAL: Failed .to_dict() on income_stmt_quarterly. Type was: {type(income_stmt_quarterly)}. Error: {to_dict_ae}")
+                    raise # Re-raise the specific error
+                # --- End Detailed Exception Handling ---
+                db_cache.set_income_statement_quarterly(ticker, income_stmt_quarterly_dict)
+                save_to_file_cache('income_statement_quarterly', ticker, income_stmt_quarterly_dict, cache_params)
+                print(f"已保存 {ticker} 的利润表（季度）数据，共 {len(income_stmt_quarterly)} 条记录")
+            except AttributeError as ae:
+                 print(f"AttributeError saving income statement quarterly: {ae}. Data type was {type(income_stmt_quarterly)}")
+            except Exception as e:
+                print(f"Error saving income statement quarterly: {e}")
+        else:
+             print(f"Skipping save for income statement quarterly due to empty or invalid data (type: {type(income_stmt_quarterly)}).")
+        print("DEBUG: Processed income statement quarterly") # <-- Add Debug Print
+
         # 获取并保存资产负债表（年报）数据
+        print("DEBUG: Fetching balance sheet annual...") # <-- Add Debug Print
         check_rate_limit()
         try:
             balance_sheet, _ = fd.get_balance_sheet_annual(symbol=ticker)
-            if len(balance_sheet.index) == 0:
-                raise ValueError("Empty balance sheet data")
+            if isinstance(balance_sheet, list): # <--- 新增检查
+                print(f"Warning: fd.get_balance_sheet_annual returned a list, expected DataFrame. Resetting.")
+                balance_sheet = pd.DataFrame()
+            elif not isinstance(balance_sheet, pd.DataFrame):
+                print(f"Warning: fd.get_balance_sheet_annual returned type {type(balance_sheet)}, expected DataFrame. Resetting.")
+                balance_sheet = pd.DataFrame()
         except Exception as e:
             print(f"Error getting balance sheet: {str(e)}")
-            balance_sheet = pd.DataFrame()
-        
+            balance_sheet = pd.DataFrame() # Ensure it's a DataFrame on error
+
         # 保存资产负债表数据到数据库和JSON文件
-        if len(balance_sheet.index) > 0:
-            balance_sheet_dict = balance_sheet.to_dict('records')
-            db_cache.set_balance_sheet_annual(ticker, balance_sheet_dict)
-            save_to_file_cache('balance_sheet_annual', ticker, balance_sheet_dict, cache_params)
-            print(f"已保存 {ticker} 的资产负债表（年报）数据，共 {len(balance_sheet)} 条记录")
-        
+        if isinstance(balance_sheet, pd.DataFrame) and len(balance_sheet.index) > 0:
+            try:
+                # --- Start Detailed Exception Handling ---
+                try:
+                    balance_sheet_dict = balance_sheet.to_dict('records')
+                except AttributeError as to_dict_ae:
+                    print(f"CRITICAL: Failed .to_dict() on balance_sheet (annual). Type was: {type(balance_sheet)}. Error: {to_dict_ae}")
+                    raise # Re-raise the specific error
+                # --- End Detailed Exception Handling ---
+                db_cache.set_balance_sheet_annual(ticker, balance_sheet_dict)
+                save_to_file_cache('balance_sheet_annual', ticker, balance_sheet_dict, cache_params)
+                print(f"已保存 {ticker} 的资产负债表（年报）数据，共 {len(balance_sheet)} 条记录")
+            except AttributeError as ae:
+                 print(f"AttributeError saving balance sheet annual: {ae}. Data type was {type(balance_sheet)}")
+            except Exception as e:
+                print(f"Error saving balance sheet annual: {e}")
+        else:
+             print(f"Skipping save for balance sheet annual due to empty or invalid data (type: {type(balance_sheet)}).")
+        print("DEBUG: Processed balance sheet annual") # <-- Add Debug Print
+
         # 获取并保存资产负债表（季度）数据
+        print("DEBUG: Fetching balance sheet quarterly...") # <-- Add Debug Print
         check_rate_limit()
         try:
             balance_sheet_quarterly, _ = fd.get_balance_sheet_quarterly(symbol=ticker)
-            if len(balance_sheet_quarterly.index) == 0:
-                raise ValueError("Empty quarterly balance sheet data")
+            if isinstance(balance_sheet_quarterly, list): # <--- 新增检查
+                print(f"Warning: fd.get_balance_sheet_quarterly returned a list, expected DataFrame. Resetting.")
+                balance_sheet_quarterly = pd.DataFrame()
+            elif not isinstance(balance_sheet_quarterly, pd.DataFrame):
+                print(f"Warning: fd.get_balance_sheet_quarterly returned type {type(balance_sheet_quarterly)}, expected DataFrame. Resetting.")
+                balance_sheet_quarterly = pd.DataFrame()
         except Exception as e:
             print(f"Error getting quarterly balance sheet: {str(e)}")
-            balance_sheet_quarterly = pd.DataFrame()
-        
+            balance_sheet_quarterly = pd.DataFrame() # Ensure it's a DataFrame on error
+
         # 保存季度资产负债表数据到数据库和JSON文件
-        if len(balance_sheet_quarterly.index) > 0:
-            balance_sheet_quarterly_dict = balance_sheet_quarterly.to_dict('records')
-            db_cache.set_balance_sheet_quarterly(ticker, balance_sheet_quarterly_dict)
-            save_to_file_cache('balance_sheet_quarterly', ticker, balance_sheet_quarterly_dict, cache_params)
-            print(f"已保存 {ticker} 的资产负债表（季度）数据，共 {len(balance_sheet_quarterly)} 条记录")
-        
+        if isinstance(balance_sheet_quarterly, pd.DataFrame) and len(balance_sheet_quarterly.index) > 0:
+            try:
+                # --- Start Detailed Exception Handling ---
+                try:
+                    balance_sheet_quarterly_dict = balance_sheet_quarterly.to_dict('records')
+                except AttributeError as to_dict_ae:
+                    print(f"CRITICAL: Failed .to_dict() on balance_sheet_quarterly. Type was: {type(balance_sheet_quarterly)}. Error: {to_dict_ae}")
+                    raise # Re-raise the specific error
+                # --- End Detailed Exception Handling ---
+                db_cache.set_balance_sheet_quarterly(ticker, balance_sheet_quarterly_dict)
+                save_to_file_cache('balance_sheet_quarterly', ticker, balance_sheet_quarterly_dict, cache_params)
+                print(f"已保存 {ticker} 的资产负债表（季度）数据，共 {len(balance_sheet_quarterly)} 条记录")
+            except AttributeError as ae:
+                 print(f"AttributeError saving balance sheet quarterly: {ae}. Data type was {type(balance_sheet_quarterly)}")
+            except Exception as e:
+                print(f"Error saving balance sheet quarterly: {e}")
+        else:
+             print(f"Skipping save for balance sheet quarterly due to empty or invalid data (type: {type(balance_sheet_quarterly)}).")
+        print("DEBUG: Processed balance sheet quarterly") # <-- Add Debug Print
+
         # 获取并保存现金流量表（年报）数据
+        print("DEBUG: Fetching cash flow annual...") # <-- Add Debug Print
         check_rate_limit()
         try:
             cash_flow, _ = fd.get_cash_flow_annual(symbol=ticker)
-            if len(cash_flow.index) == 0:
-                raise ValueError("Empty cash flow data")
+            if isinstance(cash_flow, list): # <--- 新增检查
+                print(f"Warning: fd.get_cash_flow_annual returned a list, expected DataFrame. Resetting.")
+                cash_flow = pd.DataFrame()
+            elif not isinstance(cash_flow, pd.DataFrame):
+                print(f"Warning: fd.get_cash_flow_annual returned type {type(cash_flow)}, expected DataFrame. Resetting.")
+                cash_flow = pd.DataFrame()
         except Exception as e:
             print(f"Error getting cash flow: {str(e)}")
-            cash_flow = pd.DataFrame()
-        
+            cash_flow = pd.DataFrame() # Ensure it's a DataFrame on error
+
         # 保存现金流量表数据到数据库和JSON文件
-        if len(cash_flow.index) > 0:
-            cash_flow_dict = cash_flow.to_dict('records')
-            db_cache.set_cash_flow_annual(ticker, cash_flow_dict)
-            save_to_file_cache('cash_flow_annual', ticker, cash_flow_dict, cache_params)
-            print(f"已保存 {ticker} 的现金流量表（年报）数据，共 {len(cash_flow)} 条记录")
-        
+        if isinstance(cash_flow, pd.DataFrame) and len(cash_flow.index) > 0:
+            try:
+                # --- Start Detailed Exception Handling ---
+                try:
+                    cash_flow_dict = cash_flow.to_dict('records')
+                except AttributeError as to_dict_ae:
+                    print(f"CRITICAL: Failed .to_dict() on cash_flow (annual). Type was: {type(cash_flow)}. Error: {to_dict_ae}")
+                    raise # Re-raise the specific error
+                # --- End Detailed Exception Handling ---
+                db_cache.set_cash_flow_annual(ticker, cash_flow_dict)
+                save_to_file_cache('cash_flow_annual', ticker, cash_flow_dict, cache_params)
+                print(f"已保存 {ticker} 的现金流量表（年报）数据，共 {len(cash_flow)} 条记录")
+            except AttributeError as ae:
+                 print(f"AttributeError saving cash flow annual: {ae}. Data type was {type(cash_flow)}")
+            except Exception as e:
+                print(f"Error saving cash flow annual: {e}")
+        else:
+             print(f"Skipping save for cash flow annual due to empty or invalid data (type: {type(cash_flow)}).")
+        print("DEBUG: Processed cash flow annual") # <-- Add Debug Print
+
         # 获取并保存现金流量表（季度）数据
+        print("DEBUG: Fetching cash flow quarterly...") # <-- Add Debug Print
         check_rate_limit()
         try:
             cash_flow_quarterly, _ = fd.get_cash_flow_quarterly(symbol=ticker)
-            if len(cash_flow_quarterly.index) == 0:
-                raise ValueError("Empty quarterly cash flow data")
+            if isinstance(cash_flow_quarterly, list): # <--- 新增检查
+                print(f"Warning: fd.get_cash_flow_quarterly returned a list, expected DataFrame. Resetting.")
+                cash_flow_quarterly = pd.DataFrame()
+            elif not isinstance(cash_flow_quarterly, pd.DataFrame):
+                print(f"Warning: fd.get_cash_flow_quarterly returned type {type(cash_flow_quarterly)}, expected DataFrame. Resetting.")
+                cash_flow_quarterly = pd.DataFrame()
         except Exception as e:
             print(f"Error getting quarterly cash flow: {str(e)}")
-            cash_flow_quarterly = pd.DataFrame()
-        
+            cash_flow_quarterly = pd.DataFrame() # Ensure it's a DataFrame on error
+
         # 保存季度现金流量表数据到数据库和JSON文件
-        if len(cash_flow_quarterly.index) > 0:
-            cash_flow_quarterly_dict = cash_flow_quarterly.to_dict('records')
-            db_cache.set_cash_flow_quarterly(ticker, cash_flow_quarterly_dict)
-            save_to_file_cache('cash_flow_quarterly', ticker, cash_flow_quarterly_dict, cache_params)
-            print(f"已保存 {ticker} 的现金流量表（季度）数据，共 {len(cash_flow_quarterly)} 条记录")
+        if isinstance(cash_flow_quarterly, pd.DataFrame) and len(cash_flow_quarterly.index) > 0:
+            try:
+                # --- Start Detailed Exception Handling ---
+                try:
+                    cash_flow_quarterly_dict = cash_flow_quarterly.to_dict('records')
+                except AttributeError as to_dict_ae:
+                    print(f"CRITICAL: Failed .to_dict() on cash_flow_quarterly. Type was: {type(cash_flow_quarterly)}. Error: {to_dict_ae}")
+                    raise # Re-raise the specific error
+                # --- End Detailed Exception Handling ---
+                db_cache.set_cash_flow_quarterly(ticker, cash_flow_quarterly_dict)
+                save_to_file_cache('cash_flow_quarterly', ticker, cash_flow_quarterly_dict, cache_params)
+                print(f"已保存 {ticker} 的现金流量表（季度）数据，共 {len(cash_flow_quarterly)} 条记录")
+            except AttributeError as ae:
+                 print(f"AttributeError saving cash flow quarterly: {ae}. Data type was {type(cash_flow_quarterly)}")
+            except Exception as e:
+                print(f"Error saving cash flow quarterly: {e}")
+        else:
+             print(f"Skipping save for cash flow quarterly due to empty or invalid data (type: {type(cash_flow_quarterly)}).")
+        print("DEBUG: Processed cash flow quarterly") # <-- Add Debug Print
         
         # 计算财务指标
         try:
@@ -586,7 +706,21 @@ def search_line_items(ticker: str, line_items: list, end_date: str = None, perio
         return results
     except Exception as e:
         print(f"Error fetching line items for {ticker}: {str(e)}")
-        return []
+    return []
+
+def check_and_update_financials(ticker: str):
+    """
+    检查缓存是否需要更新，必要时下载并保存最新财务数据
+    """
+    try:
+        if should_refresh_financial_data(ticker):
+            print(f"检测到 {ticker} 财报需要更新，开始下载...")
+            get_financial_metrics(ticker)
+            print(f"{ticker} 财报已更新完成。")
+        else:
+            print(f"{ticker} 财报缓存有效，无需更新。")
+    except Exception as e:
+        print(f"检查更新财报失败: {e}")
 
 def get_income_statement(ticker: str, period: str = "annual"):
     """获取利润表数据

@@ -13,7 +13,10 @@ CACHE_DIR.mkdir(parents=True, exist_ok=True)
 def get_cache_path(cache_type, ticker, params=None):
     """获取缓存文件路径，确保文件名格式为 {股票名}_{YYYYMMDD}.json"""
     today_str = datetime.now().strftime('%Y%m%d')
-    filename = f"{ticker}_{today_str}.json"
+    if cache_type == 'earnings':
+        filename = f"{ticker}_EARNINGS_{today_str}.json"
+    else:
+        filename = f"{ticker}_{today_str}.json"
     
     return CACHE_DIR / cache_type / filename
 
@@ -116,29 +119,81 @@ def load_from_file_cache(cache_type, ticker, params=None, max_age_days=30):
         return None
 
 def should_refresh_financial_data(ticker, end_date=None):
-    """判断是否应该刷新财务数据（基于财报发布时间规律）"""
-    if end_date:
-        # 如果提供了特定日期，检查该日期是否在财报发布期间
-        target_date = datetime.strptime(end_date, '%Y-%m-%d')
+    """
+    仅根据EARNINGS接口缓存判断是否需要刷新财务数据
+    """
+    import json
+    from pathlib import Path
+    from datetime import datetime
+    from src.data.database import get_db
+
+    today_str = datetime.now().strftime('%Y%m%d')
+    earnings_cache_dir = Path("src/data/cache_files/earnings")
+    earnings_cache_dir.mkdir(parents=True, exist_ok=True)
+    cache_file = earnings_cache_dir / f"{ticker}_EARNINGS_{today_str}.json"
+
+    # 如果没有今日缓存，调用API获取并缓存
+    if not cache_file.exists():
+        try:
+            from src.tools.api_base import fd
+            earnings_data, _ = fd.get_earnings(symbol=ticker)
+            # 保存缓存
+            with open(cache_file, "w", encoding="utf-8") as f:
+                json.dump(earnings_data, f, ensure_ascii=False, default=str)
+            print(f"已缓存 {ticker} 的EARNINGS数据到 {cache_file}")
+        except Exception as e:
+            print(f"获取 {ticker} 的EARNINGS数据失败: {e}")
+            # 获取失败，保守起见不更新
+            return False
+
+    # 读取缓存
+    try:
+        with open(cache_file, "r", encoding="utf-8") as f:
+            earnings_data = json.load(f)
+    except Exception as e:
+        print(f"读取EARNINGS缓存失败: {e}")
+        return False
+
+    # 兼容不同格式
+    if isinstance(earnings_data, dict):
+        earnings_data = [earnings_data]
+    elif isinstance(earnings_data, list):
+        pass
     else:
-        target_date = datetime.now()
-    
-    month = target_date.month
-    day = target_date.day
-    
-    # 判断是否在财报发布期
-    if (month == 4 and day >= 15) or (month == 5 and day <= 10):  # Q1财报期
-        return True
-    elif (month == 7 and day >= 15) or (month == 8 and day <= 10):  # Q2财报期
-        return True
-    elif (month == 10 and day >= 15) or (month == 11 and day <= 10):  # Q3财报期
-        return True
-    elif (month == 1 and day >= 15) or (month == 2):  # Q4/年报财报期
-        return True
-    
-    # 检查缓存文件是否存在
-    cache_path = get_cache_path('financial_metrics', ticker)
-    if not cache_path.parent.exists() or not cache_path.exists():
-        return True  # 如果缓存不存在，需要刷新
-    
-    return False  # 其他情况不需要刷新
+        # 字符串或其他类型，无法处理
+        print(f"EARNINGS缓存格式异常，类型为{type(earnings_data)}, 内容为: {earnings_data}")
+        return False
+
+    # 获取数据库实例
+    db = get_db()
+
+    # 遍历EARNINGS数据，查找是否有新财报
+    now = datetime.now()
+    for item in earnings_data:
+        if not isinstance(item, dict):
+            continue
+        fiscal = item.get("fiscalDateEnding")
+        reported = item.get("reportedDate")
+        if not fiscal or not reported:
+            continue
+        try:
+            reported_dt = datetime.strptime(reported, "%Y-%m-%d")
+            fiscal_dt = datetime.strptime(fiscal, "%Y-%m-%d")
+        except:
+            continue
+        # 如果当前时间早于reportedDate，跳过
+        if now < reported_dt:
+            continue
+        # 检查数据库中是否已有该财报
+        existing = db.get_income_statement_quarterly(ticker)
+        exists = False
+        for record in existing:
+            if record.get("fiscalDateEnding") == fiscal:
+                exists = True
+                break
+        if not exists:
+            # 当前时间已超过reportedDate，且数据库中没有这条财报，需更新
+            return True
+
+    # 没有发现需要更新的财报
+    return False

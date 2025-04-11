@@ -8,6 +8,7 @@ from src.tools.api_base import ALPHA_VANTAGE_API_KEY, check_rate_limit
 from src.tools.api_cache import save_to_file_cache, load_from_file_cache
 from src.tools.api_models import CompanyNews
 from src.data.cache import get_cache
+from src.data.database import get_db # <-- 添加数据库导入
 
 # 内存缓存实例
 cache = get_cache()
@@ -99,9 +100,17 @@ def get_company_news(ticker: str, end_date: str, start_date: str = None, limit: 
         if json_data and "feed" in json_data:
             news_items = [CompanyNews(**item) for item in json_data["feed"]]
             
-            # 保存到缓存
+            # 保存到内存和文件缓存
             cache.set_company_news(ticker, news_items)
             save_to_file_cache('company_news', ticker, news_items, cache_params)
+            
+            # 保存到数据库
+            try:
+                db = get_db()
+                db.set_company_news(ticker, news_items)
+            except Exception as db_err:
+                print(f"Error saving company news for {ticker} to database: {db_err}")
+                # 不中断流程，即使数据库保存失败也继续返回数据
             
             return news_items
         else:
