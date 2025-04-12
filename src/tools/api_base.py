@@ -13,7 +13,7 @@ from alpha_vantage.fundamentaldata import FundamentalData
 # 获取缓存实例和数据库实例
 from src.data.cache import get_cache
 from src.data.db_cache import get_db_cache
-from src.data.database import get_db
+from src.data.database_core import get_db
 
 # API 请求限制控制
 REQUEST_LIMIT = 75  # 每分钟最大请求数

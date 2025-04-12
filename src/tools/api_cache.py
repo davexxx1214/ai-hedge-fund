@@ -125,7 +125,7 @@ def should_refresh_financial_data(ticker, end_date=None):
     import json
     from pathlib import Path
     from datetime import datetime
-    from src.data.database import get_db
+    from src.data.database_core import get_db
 
     today_str = datetime.now().strftime('%Y%m%d')
     earnings_cache_dir = Path("src/data/cache_files/earnings")

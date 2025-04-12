@@ -4,13 +4,16 @@
 import pandas as pd # <-- Revert to standard import
 
 from src.data.cache import Cache, get_cache
-from src.data.database import get_db
+from src.data.database_core import get_db
 
 class DBCache(Cache):
     """扩展内存缓存，添加数据库持久化支持"""
     
     def __init__(self):
         super().__init__()
+        # Explicitly ensure the attribute exists on the instance after super init
+        if not hasattr(self, '_company_overview_cache'):
+             self._company_overview_cache: dict[str, dict[str, any]] = {}
         self.db = get_db()
 
     def set_company_overview(self, ticker, data):
@@ -18,25 +21,25 @@ class DBCache(Cache):
         # 存储到数据库
         self.db.set_company_overview(ticker, data)
         
-        # 存储到缓存
+        # 存储到缓存 (使用父类的 _company_overview_cache 属性)
         cache_key = f"company_overview_{ticker}"
-        self.cache.set(cache_key, data)
+        self._company_overview_cache[cache_key] = data # Use self._company_overview_cache
         
         return data
 
     def get_company_overview(self, ticker):
         """获取公司概览数据，优先从缓存获取"""
-        # 尝试从缓存获取
+        # 尝试从缓存获取 (使用父类的 _company_overview_cache 属性)
         cache_key = f"company_overview_{ticker}"
-        cached_data = self.cache.get(cache_key)
+        cached_data = self._company_overview_cache.get(cache_key) # Use self._company_overview_cache
         if cached_data is not None:
             return cached_data
         
         # 从数据库获取
         data = self.db.get_company_overview(ticker)
         if data:
-            # 更新缓存
-            self.cache.set(cache_key, data)
+            # 更新缓存 (使用父类的 _company_overview_cache 属性)
+            self._company_overview_cache[cache_key] = data # Use self._company_overview_cache
         
         return data       
     

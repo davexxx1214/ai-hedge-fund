@@ -5,7 +5,7 @@ SQL工具模块，提供SQL查询和数据分析功能
 import pandas as pd
 import sqlite3
 from pathlib import Path
-from src.data.database import get_db
+from src.data.database_core import get_db
 
 class SQLTools:
     """SQL查询和数据分析工具类"""

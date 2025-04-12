@@ -19,7 +19,7 @@ matplotlib.rcParams['axes.unicode_minus'] = False  # 解决负号显示问题
 # 添加项目根目录到路径
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 
-from src.data.database import get_db
+from src.data.database_core import get_db
 from src.data.db_cache import get_db_cache
 from src.data.sql_tools import get_sql_tools
 from src.tools.api import get_prices, get_income_statement, get_balance_sheet, get_cash_flow, get_company_news, get_insider_trades

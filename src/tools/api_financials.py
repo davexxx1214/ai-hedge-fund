@@ -8,7 +8,7 @@ from src.tools.api_base import fd, check_rate_limit, calculate_growth, FIELD_MAP
 from src.tools.api_cache import save_to_file_cache, should_refresh_financial_data
 from src.tools.api_models import MetricsWrapper
 from src.data.db_cache import get_db_cache
-from src.data.database import get_db
+from src.data.database_core import get_db
 from src.data.cache import get_cache
 
 # 内存缓存实例

@@ -10,7 +10,7 @@ import holidays
 from src.tools.api_base import ts, check_rate_limit
 from src.tools.api_cache import save_to_file_cache, load_from_file_cache
 from src.data.db_cache import get_db_cache
-from src.data.database import get_db
+from src.data.database_core import get_db
 from src.data.cache import get_cache
 
 # 内存缓存实例

@@ -14,6 +14,7 @@ class Cache:
         self._cash_flow_quarterly_cache: dict[str, list[dict[str, any]]] = {}
         self._insider_trades_cache: dict[str, list[dict[str, any]]] = {}
         self._company_news_cache: dict[str, list[dict[str, any]]] = {}
+        self._company_overview_cache: dict[str, dict[str, any]] = {} # Add cache for overview
 
     def _merge_data(self, existing: list | None, new_data: list, key_field: str) -> list:
         """Merge existing and new data, avoiding duplicates based on a key field."""
