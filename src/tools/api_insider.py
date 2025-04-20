@@ -169,8 +169,14 @@ def get_insider_trades(ticker: str, end_date: str, start_date: Optional[str] = N
         #     result.append(trade_obj)
         # return result
         
-        # 直接返回从数据库获取并处理后的数据
-        return db_data
+        # 将字典列表转换为可通过属性访问的对象列表
+        result = []
+        for item in db_data:
+            # 创建一个动态对象，将字典的键值对转换为属性
+            trade_obj = type('InsiderTrade', (), item)()
+            result.append(trade_obj)
+        
+        return result
 
     except Exception as db_query_err:
         print(f"从数据库查询 {ticker} 内部交易数据时出错: {db_query_err}")
