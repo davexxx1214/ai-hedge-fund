@@ -13,125 +13,169 @@ from src.data.db_cache import get_db_cache
 from src.data.database_core import get_db
 from src.data.cache import get_cache
 
+import os
+from datetime import datetime
+from typing import Optional
+
 # 内存缓存实例
 cache = get_cache()
 
-def get_insider_trades(ticker: str, query_date: str, limit: int = 1000) -> list:
-    """使用 Alpha Vantage 获取内部交易数据，一次性获取全量数据（过去三十年）
+def get_insider_trades(ticker: str, end_date: str, start_date: Optional[str] = None, limit: int = 1000) -> list:
+    """使用 Alpha Vantage 获取内部交易数据，并根据日期范围从数据库查询。
 
-    调用 ALPHAVANTAGE 的 INSIDER_TRANSACTIONS 接口返回所有内部交易数据，
-    根据查询日期缓存JSON文件，并在查询时检查是否存在对应日期的缓存文件。
-    如果存在缓存文件，则直接从数据库获取数据；否则从API获取全量数据并更新数据库。
+    首先检查基于 end_date 的缓存文件是否存在。如果不存在，则从 Alpha Vantage API
+    获取指定 ticker 的 *全部* 历史内部交易数据，将其存入以 end_date 命名的缓存文件，
+    并更新数据库（先清空该 ticker 的旧数据，再插入全部新数据）。
+
+    无论缓存文件是否存在，最后都会查询数据库，使用 start_date 和 end_date
+    过滤交易记录，并应用 limit。
 
     参数：
       ticker      - 股票代码
-      query_date  - 查询日期（格式：YYYY-MM-DD），用于缓存文件名和判断是否需要重新获取数据
-      limit       - 返回的记录条数上限，默认为 1000（在满足条件的数据中截取）
+      end_date    - 查询结束日期（格式：YYYY-MM-DD），也用于缓存文件名。
+      start_date  - 查询开始日期（格式：YYYY-MM-DD），可选。如果提供，则用于数据库查询过滤。
+      limit       - 返回的记录条数上限，默认为 1000（在满足条件的数据库数据中截取）。
     """
-    import os
-    from datetime import datetime
 
     # 获取数据库实例
     db = get_db()
-    
-    # 构建缓存文件名，例如 AAPL_20250401.json
-    query_date_formatted = datetime.strptime(query_date, '%Y-%m-%d').strftime('%Y%m%d')
-    cache_filename = f"{ticker}_{query_date_formatted}.json"
-    cache_path = os.path.join('src', 'data', 'cache_files', 'insider_trades', cache_filename)
-    
-    # 检查是否存在对应日期的缓存文件
-    if os.path.exists(cache_path):
-        print(f"发现缓存文件 {cache_filename}，直接从数据库获取 {ticker} 的内部交易数据")
-        db_data = db.get_insider_trades(ticker)
-        if db_data and len(db_data) > 0:
-            # 根据 limit 参数截取结果列表
-            if limit and len(db_data) > limit:
-                db_data = db_data[:limit]
-            # 转换为对象
-            result = []
-            for item in db_data:
-                if not hasattr(item, 'date'):
-                    trade_obj = type('InsiderTrade', (), item)()
-                    result.append(trade_obj)
-                else:
-                    result.append(item)
-            return result
-    
-    # 如果没有缓存文件，则从API获取全量数据
+
+    # --- 缓存检查与 API 数据获取 ---
+    # 构建基于 end_date 的缓存文件名
     try:
-        # 检查 API 请求限制
-        check_rate_limit()
-        
-        url = f'https://www.alphavantage.co/query?function=INSIDER_TRANSACTIONS&symbol={ticker}&apikey={ALPHA_VANTAGE_API_KEY}'
-        response = requests.get(url)
-        data = response.json()
-        
-        if not data or 'data' not in data:
-            print(f"No insider trade data available for {ticker}")
-            return []
-        
-        trades = data['data']
-        formatted_trades = []
-        
-        # 遍历所有返回的内部交易记录，获取全量数据
-        for trade in trades:
-            transaction_date = trade.get('transaction_date', '')
-            # 如果交易日期为空，则跳过该条记录
-            if not transaction_date:
-                continue
-            try:
-                is_sale = (trade.get('acquisition_or_disposal', '') == 'D')
-                share_price_val = trade.get('share_price', '0')
-                share_price = float(share_price_val) if share_price_val and share_price_val != '' else 0.0
-                shares = float(trade.get('shares', 0) or 0)
-                filing_date = trade.get('filing_date', transaction_date)
-                insider_name = trade.get('executive', '')
-                
-                # 只有在有有效交易数据时才保存（例如，存在insider_name和shares）
-                if insider_name and shares > 0:
-                    # 改为创建字典而不是动态对象
-                    formatted_trade = {
-                        'date': transaction_date,
-                        'filing_date': filing_date,
-                        'insider_name': insider_name,
-                        'insider_title': trade.get('executive_title', ''),
-                        'transaction_type': 'sell' if is_sale else 'buy',
-                        'price': share_price,
-                        'transaction_shares': shares,
-                        'value': share_price * shares,
-                        'shares_owned': 0, # 注意：API可能不直接提供此信息，这里设为0
-                    }
-                    formatted_trades.append(formatted_trade)
-            except Exception as e:
-                print(f"Error processing trade: {str(e)}")
-                continue
-        
-        # 根据 limit 参数截取结果列表
-        if limit and len(formatted_trades) > limit:
-            formatted_trades = formatted_trades[:limit]
-        
-        # 保存到文件缓存
-        cache_params = {'query_date': query_date}
-        save_to_file_cache('insider_trades', ticker, formatted_trades, cache_params)
-        
-        # 保存到数据库，先清除旧数据再全量插入
-        try:
-            cursor = db.conn.cursor()
-            cursor.execute("DELETE FROM insider_trades WHERE ticker = ?", (ticker,))
-            db.conn.commit()
-            print(f"已清除 {ticker} 的旧内部交易数据")
-            db.set_insider_trades(ticker, formatted_trades)
-            print(f"成功将 {len(formatted_trades)} 条全量获取的 {ticker} 内部交易数据存入数据库。")
-        except Exception as db_err:
-            print(f"Error saving insider trades for {ticker} to database: {db_err}")
-            # 不中断流程
-        
-        print(f"\nDebug - Formatted {len(formatted_trades)} insider trades successfully")
-        return formatted_trades
-    except Exception as e:
-        print(f"Error fetching insider trades for {ticker}: {str(e)}")
+        end_date_formatted = datetime.strptime(end_date, '%Y-%m-%d').strftime('%Y%m%d')
+        cache_filename = f"{ticker}_{end_date_formatted}.json"
+        cache_dir = os.path.join('src', 'data', 'cache_files', 'insider_trades')
+        os.makedirs(cache_dir, exist_ok=True) # 确保目录存在
+        cache_path = os.path.join(cache_dir, cache_filename)
+    except ValueError:
+        print(f"错误：无效的日期格式 '{end_date}'。请使用 YYYY-MM-DD。")
         return []
-    
+
+    # 检查缓存文件是否存在，如果不存在，则从 API 获取全量数据并更新 DB 和缓存
+    if not os.path.exists(cache_path):
+        print(f"未找到缓存文件 {cache_filename}。正在从 Alpha Vantage 获取 {ticker} 的全量内部交易数据...")
+        try:
+            # 检查 API 请求限制
+            check_rate_limit()
+        
+            url = f'https://www.alphavantage.co/query?function=INSIDER_TRANSACTIONS&symbol={ticker}&apikey={ALPHA_VANTAGE_API_KEY}'
+            response = requests.get(url)
+            data = response.json()
+
+            if not data or 'data' not in data:
+                print(f"Alpha Vantage 未返回 {ticker} 的内部交易数据。")
+                # 即使没有数据，也创建一个空的缓存文件，避免重复查询 API
+                with open(cache_path, 'w') as f:
+                    json.dump([], f)
+                print(f"已创建空的缓存文件 {cache_filename}。")
+                # 清空数据库中可能存在的旧数据
+                try:
+                    cursor = db.conn.cursor()
+                    cursor.execute("DELETE FROM insider_trades WHERE ticker = ?", (ticker,))
+                    db.conn.commit()
+                    print(f"已清除数据库中 {ticker} 的旧内部交易数据。")
+                except Exception as db_err:
+                    print(f"清除 {ticker} 数据库数据时出错: {db_err}")
+                # 返回空列表，因为没有数据
+                # return [] # 不要在这里返回，需要继续执行下面的数据库查询
+
+            else:
+                trades = data['data']
+                all_formatted_trades = [] # 存储从 API 获取的所有数据
+
+                # 遍历所有返回的内部交易记录，获取全量数据
+                for trade in trades:
+                    transaction_date = trade.get('transaction_date', '')
+                    if not transaction_date: continue # 跳过无日期记录
+
+                    try:
+                        is_sale = (trade.get('acquisition_or_disposal', '') == 'D')
+                        share_price_val = trade.get('share_price', '0')
+                        share_price = float(share_price_val) if share_price_val and share_price_val != '' else 0.0
+                        shares = float(trade.get('shares', 0) or 0)
+                        filing_date = trade.get('filing_date', transaction_date)
+                        insider_name = trade.get('executive', '')
+
+                        if insider_name and shares != 0: # 允许 shares 为负数（卖出）
+                            formatted_trade = {
+                                'date': transaction_date,
+                                'filing_date': filing_date,
+                                'insider_name': insider_name,
+                                'insider_title': trade.get('executive_title', ''),
+                                'transaction_type': 'sell' if is_sale else 'buy',
+                                'price': share_price,
+                                'transaction_shares': shares, # 保留原始正负值
+                                'value': share_price * abs(shares), # value 通常是正数
+                                'shares_owned': 0, # API 可能不提供
+                            }
+                            all_formatted_trades.append(formatted_trade)
+                    except Exception as e:
+                        print(f"处理交易记录时出错: {trade} - {str(e)}")
+                        continue
+
+                # 保存全量数据到文件缓存
+                try:
+                    with open(cache_path, 'w') as f:
+                        json.dump(all_formatted_trades, f, indent=2)
+                    print(f"已将 {len(all_formatted_trades)} 条 {ticker} 的全量内部交易数据保存到缓存文件 {cache_filename}。")
+                except Exception as cache_err:
+                    print(f"保存缓存文件 {cache_filename} 时出错: {cache_err}")
+
+                # 保存全量数据到数据库（先清除旧数据）
+                try:
+                    cursor = db.conn.cursor()
+                    cursor.execute("DELETE FROM insider_trades WHERE ticker = ?", (ticker,))
+                    db.conn.commit()
+                    print(f"已清除数据库中 {ticker} 的旧内部交易数据。")
+                    if all_formatted_trades: # 只有在有数据时才插入
+                        db.set_insider_trades(ticker, all_formatted_trades) # 假设此方法处理批量插入
+                        print(f"成功将 {len(all_formatted_trades)} 条 {ticker} 的全量内部交易数据存入数据库。")
+                except Exception as db_err:
+                    print(f"保存 {ticker} 内部交易数据到数据库时出错: {db_err}")
+                    # 即使数据库保存失败，也继续尝试从可能已有的旧数据中查询
+
+        except requests.exceptions.RequestException as req_err:
+            print(f"请求 Alpha Vantage API 时出错 ({ticker}): {req_err}")
+            # 无法获取新数据，将尝试从数据库查询旧数据（如果存在）
+        except Exception as e:
+            print(f"获取或处理 {ticker} 内部交易数据时发生未知错误: {str(e)}")
+            # 同样尝试从数据库查询旧数据
+
+    # --- 数据库查询与过滤 ---
+    print(f"正在从数据库查询 {ticker} 的内部交易数据 (开始: {start_date or '不限'}, 结束: {end_date})...")
+    try:
+        # 调用数据库方法进行过滤查询 (需要修改 db.get_insider_trades)
+        db_data = db.get_insider_trades(ticker, start_date=start_date, end_date=end_date)
+
+        if not db_data:
+            print(f"数据库中未找到 {ticker} 在指定日期范围内的内部交易数据。")
+            return []
+
+        print(f"从数据库获取了 {len(db_data)} 条 {ticker} 的内部交易记录。")
+
+        # 应用 limit
+        if limit and len(db_data) > limit:
+            print(f"数据超过限制 {limit}，截取前 {limit} 条。")
+            db_data = db_data[:limit]
+
+        # 转换为对象（如果需要，假设 db.get_insider_trades 返回的是字典列表或类似结构）
+        # 这里假设返回的数据已经是需要的格式，或者数据库方法返回了对象
+        # 如果返回的是字典，可能需要转换：
+        # result = []
+        # for item in db_data:
+        #     # 假设 item 是字典
+        #     trade_obj = type('InsiderTrade', (), item)() # 动态创建对象
+        #     result.append(trade_obj)
+        # return result
+        
+        # 直接返回从数据库获取并处理后的数据
+        return db_data
+
+    except Exception as db_query_err:
+        print(f"从数据库查询 {ticker} 内部交易数据时出错: {db_query_err}")
+        return []
+
 
 def calculate_business_days(start_date, end_date):
     """计算两个日期之间的工作日数量（不包括周末）"""
