@@ -69,13 +69,18 @@ class DatabaseInsiderMixin:
                 print(f"警告：内部交易数据缺少 'filing_date'，使用当前日期。数据: {item_data}")
 
             # 确保所有数据库字段都有对应的值（即使是None），以匹配SQL语句
-            final_values = []
-            all_db_fields_ordered = sorted(list(db_fields_set)) # Get a consistent order
             value_map = dict(zip(current_fields, current_values))
-            for field in all_db_fields_ordered:
-                 final_values.append(value_map.get(field)) # Append value or None if missing
+            # 只有在有有效数据时才插入（例如，存在name）
+            name_value = value_map.get('name')
+            if name_value:
+                final_values = []
+                all_db_fields_ordered = sorted(list(db_fields_set)) # Get a consistent order
+                for field in all_db_fields_ordered:
+                    final_values.append(value_map.get(field)) # Append value or None if missing
 
-            rows_to_insert.append(tuple(final_values))
+                rows_to_insert.append(tuple(final_values))
+            else:
+                print(f"跳过无效内部交易数据: {item_data}")
 
         if not rows_to_insert:
             print(f"没有有效的内部交易数据可供插入 ({ticker})。")
@@ -122,19 +127,25 @@ class DatabaseInsiderMixin:
             cursor.execute(sql, params)
             rows = cursor.fetchall()
 
-            # 转换为字典列表，并可选地映射回原始字段名 (如果需要)
+            # 转换为字典列表，并映射回原始字段名
             result = []
-            db_to_api_map = {v: k for k, v in self.set_insider_trades.__defaults__[0].items()} if hasattr(self.set_insider_trades, '__defaults__') and self.set_insider_trades.__defaults__ else {} # Reverse map (crude)
+            db_to_api_map = {
+                'transaction_date': 'date',
+                'name': 'insider_name',
+                'title': 'insider_title',
+                'transaction_price_per_share': 'price',
+                'transaction_value': 'value',
+                'transaction_shares': 'transaction_shares',
+                'shares_owned_after_transaction': 'shares_owned'
+            }
 
             for row in rows:
                 item = dict(row)
-                # # Optional: Map back to original API names if needed by caller
-                # mapped_item = {}
-                # for db_key, value in item.items():
-                #     api_key = db_to_api_map.get(db_key, db_key)
-                #     mapped_item[api_key] = value
-                # result.append(mapped_item)
-                result.append(item) # Return with database field names for now
+                mapped_item = {}
+                for db_key, value in item.items():
+                    api_key = db_to_api_map.get(db_key, db_key)
+                    mapped_item[api_key] = value
+                result.append(mapped_item)
 
             return result
         except sqlite3.Error as e:

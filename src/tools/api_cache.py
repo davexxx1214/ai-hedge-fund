@@ -12,11 +12,15 @@ CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 def get_cache_path(cache_type, ticker, params=None):
     """获取缓存文件路径，确保文件名格式为 {股票名}_{YYYYMMDD}.json"""
-    today_str = datetime.now().strftime('%Y%m%d')
-    if cache_type == 'earnings':
-        filename = f"{ticker}_EARNINGS_{today_str}.json"
+    if params and 'query_date' in params:
+        date_str = datetime.strptime(params['query_date'], '%Y-%m-%d').strftime('%Y%m%d')
     else:
-        filename = f"{ticker}_{today_str}.json"
+        date_str = datetime.now().strftime('%Y%m%d')
+    
+    if cache_type == 'earnings':
+        filename = f"{ticker}_EARNINGS_{date_str}.json"
+    else:
+        filename = f"{ticker}_{date_str}.json"
     
     return CACHE_DIR / cache_type / filename
 
