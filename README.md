@@ -8,16 +8,17 @@ This system employs several agents working together:
 2. Bill Ackman Agent - An activist investors, takes bold positions and pushes for change
 3. Cathie Wood Agent - The queen of growth investing, believes in the power of innovation and disruption
 4. Charlie Munger Agent - Warren Buffett's partner, only buys wonderful businesses at fair prices
-5. Peter Lynch Agent - Legendary growth investor who seeks "ten-baggers" and invests in what he knows
-6. Phil Fisher Agent - Legendary growth investor who mastered scuttlebutt analysis
-7. Stanley Druckenmiller Agent - Macro legend who hunts for asymmetric opportunities with growth potential
-8. Warren Buffett Agent - The oracle of Omaha, seeks wonderful companies at a fair price
-9. Valuation Agent - Calculates the intrinsic value of a stock and generates trading signals
-10. Sentiment Agent - Analyzes market sentiment and generates trading signals
-11. Fundamentals Agent - Analyzes fundamental data and generates trading signals
-12. Technicals Agent - Analyzes technical indicators and generates trading signals
-13. Risk Manager - Calculates risk metrics and sets position limits
-14. Portfolio Manager - Makes final trading decisions and generates orders
+5. Michael Burry Agent - The Big Short contrarian who hunts for deep value
+6. Peter Lynch Agent - Practical investor who seeks "ten-baggers" in everyday businesses
+7. Phil Fisher Agent - Meticulous growth investor who uses deep "scuttlebutt" research 
+8. Stanley Druckenmiller Agent - Macro legend who hunts for asymmetric opportunities with growth potential
+9. Warren Buffett Agent - The oracle of Omaha, seeks wonderful companies at a fair price
+10. Valuation Agent - Calculates the intrinsic value of a stock and generates trading signals
+11. Sentiment Agent - Analyzes market sentiment and generates trading signals
+12. Fundamentals Agent - Analyzes fundamental data and generates trading signals
+13. Technicals Agent - Analyzes technical indicators and generates trading signals
+14. Risk Manager - Calculates risk metrics and sets position limits
+15. Portfolio Manager - Makes final trading decisions and generates orders
     
 <img width="1042" alt="Screenshot 2025-03-22 at 6 19 07 PM" src="https://github.com/user-attachments/assets/cbae3dcf-b571-490d-b0ad-3f0f035ac0d4" />
 
@@ -43,7 +44,6 @@ By using this software, you agree to use it solely for learning purposes.
 - [Usage](#usage)
   - [Running the Hedge Fund](#running-the-hedge-fund)
   - [Running the Backtester](#running-the-backtester)
-  - [Running the Group Backtester](#running-the-group-backtester)
 - [Project Structure](#project-structure)
 - [Contributing](#contributing)
 - [Feature Requests](#feature-requests)
@@ -104,6 +104,12 @@ poetry run python src/main.py --ticker AAPL,MSFT,NVDA
 **Example Output:**
 <img width="992" alt="Screenshot 2025-01-06 at 5 50 17 PM" src="https://github.com/user-attachments/assets/e8ca04bf-9989-4a7d-a8b4-34e04666663b" />
 
+You can also specify a `--ollama` flag to run the AI hedge fund using local LLMs.
+
+```bash
+poetry run python src/main.py --ticker AAPL,MSFT,NVDA --ollama
+```
+
 You can also specify a `--show-reasoning` flag to print the reasoning of each agent to the console.
 
 ```bash
@@ -122,7 +128,8 @@ poetry run python src/backtester.py --ticker AAPL,MSFT,NVDA
 ```
 
 **Example Output:**
-<img width="941" alt="Screenshot 2025-01-06 at 5 47 52 PM" src="https://github.com/user-attachments/assets/00e794ea-8628-44e6-9a84-8f8a31ad3b47" />
+<img width="941" alt="Screenshot 2025-01-06 at 5 47 52 PM" src="https://github.com/user-attachments/assets/00e794ea-8628-44e6-9a84-8f8a31ad3b47" />
+
 
 You can optionally specify the start and end dates to backtest over a specific time period.
 
@@ -130,39 +137,11 @@ You can optionally specify the start and end dates to backtest over a specific t
 poetry run python src/backtester.py --ticker AAPL,MSFT,NVDA --start-date 2024-01-01 --end-date 2024-03-01
 ```
 
-### Running the Group Backtester
-
-The group backtester allows you to backtest predefined groups of analysts instead of selecting them individually.
-
+You can also specify a `--ollama` flag to run the backtester using local LLMs.
 ```bash
-poetry run python src/backtestergroup.py --ticker AAPL,MSFT,NVDA
+poetry run python src/backtester.py --ticker AAPL,MSFT,NVDA --ollama
 ```
 
-The backtester groups analysts into two categories:
-
-1. **价值驱动型 (Fundamentals-Driven Agents)**
-   - Includes: Ben Graham, Warren Buffett, Charlie Munger, Bill Ackman, Valuation Agent, Fundamentals Agent
-   - Focus on company fundamentals, intrinsic value, and long-term growth potential
-
-2. **变量捕捉型 (Dynamic Signal Agents)**
-   - Includes: Cathie Wood, Stanley Druckenmiller, Sentiment Agent, Technicals Agent
-   - Focus on market trends, technical signals, and short to medium-term opportunities
-
-This allows you to compare the performance of different investment philosophies and strategies.
-
-You can use the same options as the regular backtester:
-
-```bash
-poetry run python src/backtestergroup.py --ticker AAPL,MSFT,NVDA --start-date 2024-01-01 --end-date 2024-03-01 --disable-short-positions
-```
-
-#### Backtest Results
-
-When running the group backtester, results are automatically saved to the `./results` directory. A timestamped folder (e.g., `./results/backtest_20250312_002139/`) will be created containing:
-
-- `trade_records.csv`: All trading actions during the backtest period
-- `portfolio_summary.csv`: Summary of portfolio performance
-- `portfolio_value_chart.png`: A high-quality chart showing portfolio value over time
 
 ## Project Structure 
 ```
@@ -176,11 +155,11 @@ ai-hedge-fund/
 │   │   ├── sentiment.py          # Sentiment analysis agent
 │   │   ├── technicals.py         # Technical analysis agent
 │   │   ├── valuation.py          # Valuation analysis agent
+│   │   ├── ...                   # Other agents
 │   │   ├── warren_buffett.py     # Warren Buffett agent
 │   ├── tools/                    # Agent tools
 │   │   ├── api.py                # API tools
 │   ├── backtester.py             # Backtesting tools
-│   ├── backtestergroup.py        # Group backtesting tools
 │   ├── main.py # Main entry point
 ├── pyproject.toml
 ├── ...
