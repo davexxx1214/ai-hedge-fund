@@ -308,19 +308,20 @@ class SQLTools:
         tables = {}
         for table_name in self.db.get_tables():
             schema = self.db.get_table_schema(table_name)
+            count = stats.get('table_counts', {}).get(table_name, 0)
             tables[table_name] = {
                 'columns': [dict(row) for row in schema],
-                'count': stats.get(table_name, 0)
+                'count': count
             }
         
         # 获取股票列表
-        tickers = stats.get('tickers', [])
+        tickers = stats.get('distinct_tickers', [])
         
         return {
             'tables': tables,
             'tickers': tickers,
-            'ticker_count': stats.get('ticker_count', 0),
-            'db_size': stats.get('db_size', 0)
+            'ticker_count': stats.get('distinct_ticker_count', 0),
+            'db_size': stats.get('db_size_bytes', 0)
         }
 
 # 全局SQL工具实例

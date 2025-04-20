@@ -13,7 +13,7 @@ from src.data.database_core import get_db # <-- 添加数据库导入
 # 内存缓存实例
 cache = get_cache()
 
-def get_company_news(ticker: str, end_date: str, start_date: str = None, limit: int = 1000) -> list:
+def get_company_news(ticker: str, end_date: str, start_date: str = None, limit: int = 50) -> list:
     """
     使用 Alpha Vantage 获取公司新闻数据和情感数据，将 start_date 和 end_date 转换为 API 查询 URL 的时间参数。
 
@@ -58,6 +58,16 @@ def get_company_news(ticker: str, end_date: str, start_date: str = None, limit: 
             if limit and len(filtered_data) > limit:
                 filtered_data = filtered_data[:limit]
             print(f"从内存缓存获取 {ticker} 的公司新闻数据")
+            # 即使是从缓存获取的数据，也尝试保存到数据库
+            try:
+                db = get_db()
+                print(f"尝试保存 {len(filtered_data)} 条 {ticker} 的新闻记录到数据库（从内存缓存）")
+                for i, item in enumerate(filtered_data[:3]):  # 只显示前3条以避免过多输出
+                    print(f"新闻项 {i+1}: {item.__dict__ if hasattr(item, '__dict__') else item}")
+                db.set_company_news(ticker, filtered_data)
+                print(f"成功保存 {ticker} 的新闻记录到数据库（从内存缓存）")
+            except Exception as db_err:
+                print(f"保存 {ticker} 的新闻记录到数据库时出错（从内存缓存）: {db_err}")
             return filtered_data
     
     # 尝试从文件缓存获取
@@ -68,6 +78,16 @@ def get_company_news(ticker: str, end_date: str, start_date: str = None, limit: 
         # 更新内存缓存
         cache.set_company_news(ticker, file_cached_data)
         print(f"从文件缓存获取 {ticker} 的公司新闻数据")
+        # 即使是从缓存获取的数据，也尝试保存到数据库
+        try:
+            db = get_db()
+            print(f"尝试保存 {len(file_cached_data)} 条 {ticker} 的新闻记录到数据库（从文件缓存）")
+            for i, item in enumerate(file_cached_data[:3]):  # 只显示前3条以避免过多输出
+                print(f"新闻项 {i+1}: {item.__dict__ if hasattr(item, '__dict__') else item}")
+            db.set_company_news(ticker, file_cached_data)
+            print(f"成功保存 {ticker} 的新闻记录到数据库（从文件缓存）")
+        except Exception as db_err:
+            print(f"保存 {ticker} 的新闻记录到数据库时出错（从文件缓存）: {db_err}")
         return file_cached_data
     
     # 如果缓存中没有，则从 API 获取
@@ -77,18 +97,25 @@ def get_company_news(ticker: str, end_date: str, start_date: str = None, limit: 
         
         time_from = None
         time_to = None
+        from datetime import datetime
+        current_datetime = datetime.now().strftime("%Y%m%dT%H%M")
         if start_date and end_date:
-            # 统一使用美东时间上午 9:30
-            time_from = f"{start_date.replace('-', '')}T0930"
-            time_to = f"{end_date.replace('-', '')}T0930"
-
+            time_from = f"{start_date.replace('-', '')}T0930"  # 美东时间9:30
+            if start_date == end_date:
+                time_to = f"{end_date.replace('-', '')}T2359"
+            else:
+                time_to = f"{end_date.replace('-', '')}T2359"
+            # 确保 time_from 和 time_to 不晚于当前时间
+            if time_from > current_datetime:
+                time_from = current_datetime
+            if time_to > current_datetime:
+                time_to = current_datetime
+        
         url = "https://www.alphavantage.co/query"
         params = {
             "function": "NEWS_SENTIMENT",
             "tickers": ticker,
-            "apikey": ALPHA_VANTAGE_API_KEY,
-            "limit": limit,
-            "sort": "LATEST",
+            "apikey": ALPHA_VANTAGE_API_KEY
         }
         if time_from:
             params["time_from"] = time_from
@@ -107,9 +134,13 @@ def get_company_news(ticker: str, end_date: str, start_date: str = None, limit: 
             # 保存到数据库
             try:
                 db = get_db()
+                print(f"尝试保存 {len(news_items)} 条 {ticker} 的新闻记录到数据库")
+                for i, item in enumerate(news_items[:3]):  # 只显示前3条以避免过多输出
+                    print(f"新闻项 {i+1}: {item.__dict__ if hasattr(item, '__dict__') else item}")
                 db.set_company_news(ticker, news_items)
+                print(f"成功保存 {ticker} 的新闻记录到数据库")
             except Exception as db_err:
-                print(f"Error saving company news for {ticker} to database: {db_err}")
+                print(f"保存 {ticker} 的新闻记录到数据库时出错: {db_err}")
                 # 不中断流程，即使数据库保存失败也继续返回数据
             
             return news_items

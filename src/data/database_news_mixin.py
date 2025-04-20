@@ -21,7 +21,7 @@ class DatabaseNewsMixin:
 
         cursor = self.conn.cursor()
         insert_sql = """
-        INSERT OR IGNORE INTO company_news (
+        INSERT OR REPLACE INTO company_news (
             ticker, url, date, time_published_raw, title, summary,
             sentiment_score, sentiment_label, author, topics,
             source_domain, banner_image, category_within_source
@@ -67,22 +67,25 @@ class DatabaseNewsMixin:
             # 构建要插入的行数据元组，按 db_fields_order 顺序
             row_tuple = []
             for db_field in db_fields_order:
-                # 查找对应的 API/对象属性名
-                api_key = next((k for k, v in api_to_db_map.items() if v == db_field), db_field)
-                value = item_data.get(api_key)
+                if db_field == 'ticker':
+                    value = ticker  # 始终使用传入的 ticker 参数值
+                else:
+                    # 查找对应的 API/对象属性名
+                    api_key = next((k for k, v in api_to_db_map.items() if v == db_field), db_field)
+                    value = item_data.get(api_key)
 
-                # 特殊处理 time_published_raw (如果映射存在)
-                if db_field == 'time_published_raw' and 'time_published' in item_data:
-                     value = item_data.get('time_published') # 优先使用原始字段名
+                    # 特殊处理 time_published_raw (如果映射存在)
+                    if db_field == 'time_published_raw' and 'time_published' in item_data:
+                        value = item_data.get('time_published')  # 优先使用原始字段名
 
-                # 特殊处理 topics 和 author (可能是列表)
-                if db_field in ['topics', 'author'] and isinstance(value, list):
-                    try:
-                        # 将列表转换为 JSON 字符串存储
-                        value = json.dumps(value, ensure_ascii=False)
-                    except TypeError:
-                         print(f"警告：无法序列化字段 '{db_field}' 的列表值，将存为 NULL。")
-                         value = None
+                    # 特殊处理 topics 和 author (可能是列表)
+                    if db_field in ['topics', 'author'] and isinstance(value, list):
+                        try:
+                            # 将列表转换为 JSON 字符串存储
+                            value = json.dumps(value, ensure_ascii=False)
+                        except TypeError:
+                            print(f"警告：无法序列化字段 '{db_field}' 的列表值，将存为 NULL。")
+                            value = None
 
                 row_tuple.append(value)
 
@@ -93,7 +96,7 @@ class DatabaseNewsMixin:
             try:
                 cursor.executemany(insert_sql, rows_to_insert)
                 self.conn.commit()
-                # print(f"成功插入或忽略了 {len(rows_to_insert)} 条 {ticker} 的新闻记录。")
+                print(f"成功插入或忽略了 {len(rows_to_insert)} 条 {ticker} 的新闻记录。")
             except sqlite3.Error as e:
                 print(f"批量插入 {ticker} 新闻数据时出错: {e}\nSQL: {insert_sql}\n示例数据: {rows_to_insert[0] if rows_to_insert else 'N/A'}")
                 self.conn.rollback() # 出错时回滚
