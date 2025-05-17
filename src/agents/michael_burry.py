@@ -309,7 +309,9 @@ def _analyze_contrarian_sentiment(news):
 
     # Count negative sentiment articles
     sentiment_negative_count = sum(
-        1 for n in news if n.sentiment and n.sentiment.lower() in ["negative", "bearish"]
+        1 for n in news
+        if isinstance(getattr(n, 'overall_sentiment_label', None), str)
+        and n.overall_sentiment_label.lower() in ["negative", "bearish"]
     )
     
     if sentiment_negative_count >= 5:
