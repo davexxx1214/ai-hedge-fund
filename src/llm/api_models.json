@@ -1,5 +1,10 @@
 [
   {
+    "display_name": "[openai] grok:qwen-qwq-32b",
+    "model_name": "groq",
+    "provider": "OpenAI"
+  },
+  {
     "display_name": "[anthropic] claude-3.5-haiku",
     "model_name": "claude-3-5-haiku-latest",
     "provider": "Anthropic"
