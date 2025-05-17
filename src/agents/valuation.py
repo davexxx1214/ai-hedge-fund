@@ -9,10 +9,10 @@ configurable weights.
 from statistics import median
 import json
 from langchain_core.messages import HumanMessage
-from graph.state import AgentState, show_agent_reasoning
-from utils.progress import progress
+from src.graph.state import AgentState, show_agent_reasoning
+from src.utils.progress import progress
 
-from tools.api import (
+from src.tools.api import (
     get_financial_metrics,
     get_market_cap,
     search_line_items,
@@ -151,7 +151,12 @@ def valuation_agent(state: AgentState):
     msg = HumanMessage(content=json.dumps(valuation_analysis), name="valuation_agent")
     if state["metadata"].get("show_reasoning"):
         show_agent_reasoning(valuation_analysis, "Valuation Analysis Agent")
+
+    # Add the signal to the analyst_signals list
     state["data"]["analyst_signals"]["valuation_agent"] = valuation_analysis
+
+    progress.update_status("valuation_agent", None, "Done")
+    
     return {"messages": [msg], "data": data}
 
 #############################
