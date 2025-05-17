@@ -346,6 +346,9 @@ def get_financial_metrics(ticker: str, end_date: str = None, period: str = "ttm"
             "earnings_per_share": float(overview["EPS"].iloc[0]) if "EPS" in overview.columns and len(overview.index) > 0 else 0,
             "free_cash_flow_per_share": free_cash_flow_per_share,
             "issuance_or_purchase_of_equity_shares": issuance_or_purchase_of_equity_shares,
+            "enterprise_value": float(overview["EnterpriseValue"].iloc[0]) if "EnterpriseValue" in overview.columns and len(overview.index) > 0 else 0,
+            "enterprise_value_to_ebitda_ratio": float(overview["EVToEBITDA"].iloc[0]) if "EVToEBITDA" in overview.columns and len(overview.index) > 0 else 0,
+            "market_cap": float(overview["MarketCapitalization"].iloc[0]) if "MarketCapitalization" in overview.columns and len(overview.index) > 0 else 0,
             "report_period": report_date or datetime.now().strftime('%Y-%m-%d')
         }
         metrics = MetricsWrapper(metrics_data)
@@ -369,6 +372,9 @@ def get_financial_metrics(ticker: str, end_date: str = None, period: str = "ttm"
             "earnings_per_share": 0,
             "free_cash_flow_per_share": 0,
             "issuance_or_purchase_of_equity_shares": 0,
+            "enterprise_value": 0,
+            "enterprise_value_to_ebitda_ratio": 0,
+            "market_cap": 0,
             "report_period": datetime.now().strftime('%Y-%m-%d')
         }
         return [MetricsWrapper(default_data)]
