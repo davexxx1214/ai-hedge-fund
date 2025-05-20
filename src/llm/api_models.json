@@ -20,6 +20,11 @@
     "provider": "Anthropic"
   },
   {
+    "display_name": "[anthropic] custom",
+    "model_name": "-",
+    "provider": "Anthropic"
+  },
+  {
     "display_name": "[deepseek] deepseek-r1",
     "model_name": "deepseek-reasoner",
     "provider": "DeepSeek"
@@ -27,6 +32,11 @@
   {
     "display_name": "[deepseek] deepseek-v3",
     "model_name": "deepseek-chat",
+    "provider": "DeepSeek"
+  },
+  {
+    "display_name": "[deepseek] custom",
+    "model_name": "-",
     "provider": "DeepSeek"
   },
   {
@@ -40,6 +50,11 @@
     "provider": "Gemini"
   },
   {
+    "display_name": "[gemini] custom",
+    "model_name": "-",
+    "provider": "Gemini"
+  },
+  {
     "display_name": "[groq] llama-4-scout-17b",
     "model_name": "meta-llama/llama-4-scout-17b-16e-instruct",
     "provider": "Groq"
@@ -47,6 +62,11 @@
   {
     "display_name": "[groq] llama-4-maverick-17b",
     "model_name": "meta-llama/llama-4-maverick-17b-128e-instruct",
+    "provider": "Groq"
+  },
+  {
+    "display_name": "[groq] custom",
+    "model_name": "-",
     "provider": "Groq"
   },
   {
@@ -67,6 +87,11 @@
   {
     "display_name": "[openai] o4-mini",
     "model_name": "o4-mini",
+    "provider": "OpenAI"
+  },
+  {
+    "display_name": "[openai] custom",
+    "model_name": "-",
     "provider": "OpenAI"
   }
 ] 
