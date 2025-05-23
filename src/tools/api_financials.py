@@ -3,6 +3,7 @@
 """
 import pandas as pd
 from datetime import datetime
+import time
 
 from src.tools.api_base import fd, check_rate_limit, calculate_growth, FIELD_MAPPING
 from src.tools.api_cache import save_to_file_cache, should_refresh_financial_data
@@ -36,6 +37,7 @@ def get_financial_metrics(ticker: str, end_date: str = None, period: str = "ttm"
         check_rate_limit()
         
         # 获取公司概览数据
+        check_rate_limit()
         try:
             overview, _ = fd.get_company_overview(symbol=ticker)
             if isinstance(overview, list): # <--- 新增检查
@@ -235,13 +237,18 @@ def get_financial_metrics(ticker: str, end_date: str = None, period: str = "ttm"
         try:
             cash_flow_quarterly, _ = fd.get_cash_flow_quarterly(symbol=ticker)
             if isinstance(cash_flow_quarterly, list): # <--- 新增检查
-                print(f"Warning: fd.get_cash_flow_quarterly returned a list, expected DataFrame. Resetting.")
+                print(f"Warning: fd.get_cash_flow_quarterly for {ticker} returned a list, expected DataFrame. Resetting.")
                 cash_flow_quarterly = pd.DataFrame()
             elif not isinstance(cash_flow_quarterly, pd.DataFrame):
-                print(f"Warning: fd.get_cash_flow_quarterly returned type {type(cash_flow_quarterly)}, expected DataFrame. Resetting.")
+                print(f"Warning: fd.get_cash_flow_quarterly for {ticker} returned type {type(cash_flow_quarterly)}, expected DataFrame. Resetting.")
                 cash_flow_quarterly = pd.DataFrame()
+            # 检查DataFrame是否真的为空，因为API可能返回一个空的DataFrame结构体表示无数据，而不是抛出异常
+            if cash_flow_quarterly.empty:
+                print(f"Info: fd.get_cash_flow_quarterly for {ticker} returned an empty DataFrame. This might be due to no data or an API issue not causing an exception.")
+
         except Exception as e:
-            print(f"Error getting quarterly cash flow: {str(e)}")
+            # 更明确地指出这是API调用本身的问题
+            print(f"CRITICAL_API_ERROR: Error calling fd.get_cash_flow_quarterly for {ticker}: {str(e)}. Will proceed with empty quarterly cash flow data.")
             cash_flow_quarterly = pd.DataFrame() # Ensure it's a DataFrame on error
 
         # 保存季度现金流量表数据到数据库和JSON文件
@@ -442,6 +449,7 @@ def search_line_items(ticker: str, line_items: list, end_date: str = None, perio
                         if "commonStockSharesOutstanding" in balance_sheet.columns.tolist():
                             shares = float(balance_sheet["commonStockSharesOutstanding"].iloc[i])
                         else:
+                            check_rate_limit()
                             overview, _ = fd.get_company_overview(symbol=ticker)
                             if "SharesOutstanding" in overview.columns.tolist():
                                 shares = float(overview["SharesOutstanding"].iloc[0])

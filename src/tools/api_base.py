@@ -16,8 +16,10 @@ from src.data.db_cache import get_db_cache
 from src.data.database_core import get_db
 
 # API 请求限制控制
-REQUEST_LIMIT = 75  # 每分钟最大请求数
+REQUEST_LIMIT = 60  # 每分钟最大请求数
+MIN_REQUEST_INTERVAL = 1.0  # 每次请求之间的最小间隔（秒）
 request_timestamps = []  # 记录请求时间戳
+last_request_time = 0  # 记录上次请求时间
 
 # 从环境变量中获取 ALPHAVANTAGE API Key
 ALPHA_VANTAGE_API_KEY = os.getenv("ALPHAVANTAGE_API_KEY")
@@ -30,24 +32,36 @@ cache = get_cache()
 
 def check_rate_limit():
     """检查 API 请求频率限制，必要时等待"""
-    global request_timestamps
+    global request_timestamps, last_request_time
     
     current_time = time.time()
+    
+    # 确保与上次请求之间有最小间隔
+    time_since_last = current_time - last_request_time
+    if time_since_last < MIN_REQUEST_INTERVAL:
+        sleep_time = MIN_REQUEST_INTERVAL - time_since_last
+        print(f"等待请求间隔: {sleep_time:.2f} 秒...")
+        time.sleep(sleep_time)
+        current_time = time.time()
+    
     # 清理超过一分钟的时间戳
     request_timestamps = [ts for ts in request_timestamps if current_time - ts < 60]
     
     # 如果已达到限制，等待
     if len(request_timestamps) >= REQUEST_LIMIT:
-        oldest_timestamp = min(request_timestamps)
-        sleep_time = 60 - (current_time - oldest_timestamp) + 0.1  # 额外等待 0.1 秒以确保安全
-        if sleep_time > 0:
-            print(f"API 请求达到限制，等待 {sleep_time:.2f} 秒...")
-            time.sleep(sleep_time)
-            # 重新检查（递归调用）
-            return check_rate_limit()
+        if request_timestamps:
+            oldest_timestamp = min(request_timestamps)
+            sleep_time = 60 - (current_time - oldest_timestamp) + 1.0  # 额外等待 1 秒以确保安全
+            if sleep_time > 0:
+                print(f"API 请求达到限制（{len(request_timestamps)}/{REQUEST_LIMIT}），等待 {sleep_time:.2f} 秒...")
+                time.sleep(sleep_time)
+                # 重新检查（递归调用）
+                return check_rate_limit()
     
-    # 记录新的请求时间戳
-    request_timestamps.append(time.time())
+    # 记录新的请求时间戳和更新上次请求时间
+    request_timestamps.append(current_time)
+    last_request_time = current_time
+    print(f"API 请求计数: {len(request_timestamps)}/{REQUEST_LIMIT}")
 
 # 财报发布时间规律（美国公司）
 # Q1（1-3月）财报：4月中旬至5月初发布

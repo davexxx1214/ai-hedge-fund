@@ -3,6 +3,35 @@ from src.graph.state import AgentState, show_agent_reasoning
 from src.utils.progress import progress
 from src.tools.api import get_prices, prices_to_df
 import json
+from datetime import datetime, timedelta
+
+
+def get_latest_available_price(ticker: str, target_date: str):
+    """
+    获取最新可用的价格数据
+    先尝试目标日期，如果失败则向前查找最近的工作日
+    """
+    current_date = datetime.strptime(target_date, '%Y-%m-%d')
+    
+    # 最多向前查找5个工作日
+    for i in range(6):  # 0到5，共6次尝试
+        check_date = current_date - timedelta(days=i)
+        check_date_str = check_date.strftime('%Y-%m-%d')
+        
+        # 跳过周末（周六=5，周日=6）
+        if check_date.weekday() >= 5:
+            continue
+            
+        prices = get_prices(
+            ticker=ticker,
+            start_date=check_date_str,
+            end_date=check_date_str
+        )
+        
+        if prices:
+            return prices, check_date_str
+    
+    return [], None
 
 
 ##### Risk Management Agent #####
@@ -22,11 +51,8 @@ def risk_management_agent(state: AgentState):
     for ticker in all_tickers:
         progress.update_status("risk_management_agent", ticker, "Fetching price data")
         
-        prices = get_prices(
-            ticker=ticker,
-            start_date=data["end_date"],  # Just get the latest price
-            end_date=data["end_date"],
-        )
+        # 获取最新可用的价格数据
+        prices, price_date = get_latest_available_price(ticker, data["end_date"])
 
         if not prices:
             progress.update_status("risk_management_agent", ticker, "Warning: No price data found")
@@ -35,9 +61,10 @@ def risk_management_agent(state: AgentState):
         prices_df = prices_to_df(prices)
         
         if not prices_df.empty:
+            # 获取最新的收盘价
             current_price = prices_df["close"].iloc[-1]
             current_prices[ticker] = current_price
-            progress.update_status("risk_management_agent", ticker, f"Current price: {current_price}")
+            progress.update_status("risk_management_agent", ticker, f"Current price: {current_price} ({price_date})")
         else:
             progress.update_status("risk_management_agent", ticker, "Warning: Empty price data")
 
