@@ -6,6 +6,11 @@ export interface ModelItem {
 
 export const apiModels: ModelItem[] = [
   {
+    "display_name": "qwen-qwq-32b",
+    "model_name": "groq",
+    "provider": "OpenAI"
+  },
+  {
     "display_name": "Claude Haiku 3.5",
     "model_name": "claude-3-5-haiku-latest",
     "provider": "Anthropic"
