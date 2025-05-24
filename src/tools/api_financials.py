@@ -898,6 +898,112 @@ def _calculate_line_items(ticker: str, line_items: list, limit: int, income_stmt
                                 found = True
                     except Exception as e:
                         print(f"Error processing {item}: {str(e)}")
+                
+                elif item == "debt_to_equity":
+                    try:
+                        # Debt to Equity = Total Debt / Total Equity
+                        if ("totalShareholderEquity" in balance_sheet.columns.tolist() and i < len(balance_sheet)):
+                            total_equity = float(balance_sheet["totalShareholderEquity"].iloc[i])
+                            # 计算总债务
+                            total_debt = 0
+                            debt_found = False
+                            
+                            if "shortTermDebt" in balance_sheet.columns.tolist():
+                                short_debt = balance_sheet["shortTermDebt"].iloc[i]
+                                if short_debt and short_debt != 'None':
+                                    total_debt += float(short_debt)
+                                    debt_found = True
+                            
+                            if "longTermDebt" in balance_sheet.columns.tolist():
+                                long_debt = balance_sheet["longTermDebt"].iloc[i]
+                                if long_debt and long_debt != 'None':
+                                    total_debt += float(long_debt)
+                                    debt_found = True
+                            
+                            if debt_found and total_equity != 0:
+                                value = total_debt / total_equity
+                                found = True
+                    except Exception as e:
+                        print(f"Error processing {item}: {str(e)}")
+                
+                elif item == "dividends_and_other_cash_distributions":
+                    try:
+                        # 从现金流量表获取分红数据
+                        if i < len(cash_flow):
+                            dividends_total = 0
+                            div_found = False
+                            
+                            if "dividendPayout" in cash_flow.columns.tolist():
+                                dividends = cash_flow["dividendPayout"].iloc[i]
+                                if dividends and dividends != 'None':
+                                    dividends_total = float(dividends)  # 已经是正数
+                                    div_found = True
+                            elif "dividendPayoutCommonStock" in cash_flow.columns.tolist():
+                                dividends = cash_flow["dividendPayoutCommonStock"].iloc[i]
+                                if dividends and dividends != 'None':
+                                    dividends_total = float(dividends)
+                                    div_found = True
+                            
+                            # 备用字段名（如果上述字段不存在）
+                            if not div_found:
+                                if "dividendsPaid" in cash_flow.columns.tolist():
+                                    dividends = cash_flow["dividendsPaid"].iloc[i]
+                                    if dividends and dividends != 'None':
+                                        dividends_total = abs(float(dividends))  # 通常为负数，取绝对值
+                                        div_found = True
+                                
+                                if "paymentsOfDividends" in cash_flow.columns.tolist():
+                                    payments = cash_flow["paymentsOfDividends"].iloc[i]
+                                    if payments and payments != 'None':
+                                        dividends_total = abs(float(payments))
+                                        div_found = True
+                                
+                                if "cashDividendsPaid" in cash_flow.columns.tolist():
+                                    cash_div = cash_flow["cashDividendsPaid"].iloc[i]
+                                    if cash_div and cash_div != 'None':
+                                        dividends_total = abs(float(cash_div))
+                                        div_found = True
+                            
+                            if div_found:
+                                value = dividends_total
+                                found = True
+                    except Exception as e:
+                        print(f"Error processing {item}: {str(e)}")
+                
+                elif item == "book_value_per_share":
+                    try:
+                        # Book Value Per Share = Total Shareholders Equity / Shares Outstanding
+                        if ("totalShareholderEquity" in balance_sheet.columns.tolist() and i < len(balance_sheet)):
+                            total_equity = float(balance_sheet["totalShareholderEquity"].iloc[i])
+                            shares = 0
+                            
+                            if ("commonStockSharesOutstanding" in balance_sheet.columns.tolist() and 
+                                i < len(balance_sheet)):
+                                shares = float(balance_sheet["commonStockSharesOutstanding"].iloc[i])
+                            elif "SharesOutstanding" in overview.columns.tolist() and len(overview) > 0:
+                                shares = float(overview["SharesOutstanding"].iloc[0])
+                            
+                            if shares != 0:
+                                value = total_equity / shares
+                                found = True
+                    except Exception as e:
+                        print(f"Error processing {item}: {str(e)}")
+                
+                elif item == "operating_expense":
+                    try:
+                        # Operating Expenses 从利润表获取
+                        if "operatingExpenses" in income_stmt.columns.tolist() and i < len(income_stmt):
+                            value = float(income_stmt["operatingExpenses"].iloc[i])
+                            found = True
+                        elif ("sellingGeneralAndAdministrative" in income_stmt.columns.tolist() and 
+                              "researchAndDevelopment" in income_stmt.columns.tolist() and i < len(income_stmt)):
+                            # 如果没有直接的operating expenses，计算 SG&A + R&D
+                            sga = float(income_stmt["sellingGeneralAndAdministrative"].iloc[i])
+                            rd = float(income_stmt["researchAndDevelopment"].iloc[i])
+                            value = sga + rd
+                            found = True
+                    except Exception as e:
+                        print(f"Error processing {item}: {str(e)}")
             
             # 设置值，如果未找到则设为None（不使用默认值0）
             if found:
