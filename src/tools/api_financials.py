@@ -125,36 +125,55 @@ def _fetch_and_save_financial_data(ticker: str, db_cache, cache_params) -> list:
         print(f"Error fetching and saving financial data for {ticker}: {str(e)}")
         return _get_default_metrics()
 
-def _safe_get_overview(ticker: str) -> pd.DataFrame:
-    """安全获取公司概览数据"""
-        try:
-            overview, _ = fd.get_company_overview(symbol=ticker)
-        if isinstance(overview, list):
-                print(f"Warning: fd.get_company_overview returned a list, expected DataFrame. Resetting.")
-                overview = pd.DataFrame()
-            elif not isinstance(overview, pd.DataFrame):
-                print(f"Warning: fd.get_company_overview returned type {type(overview)}, expected DataFrame. Resetting.")
-                overview = pd.DataFrame()
+def _get_overview_from_cache_or_api(ticker: str) -> pd.DataFrame:
+    """优先从缓存获取公司概览数据，如果缓存不存在则调用API"""
+    # 检查是否有当前日期的公司概览缓存
+    if check_current_date_cache_exists('company_overview', ticker):
+        print(f"从缓存获取 {ticker} 的公司概览数据")
+        cached_overview = load_from_file_cache('company_overview', ticker)
+        if cached_overview is not None:
+            # 如果缓存数据是字典格式，转换为DataFrame
+            if isinstance(cached_overview, list) and len(cached_overview) > 0:
+                return pd.DataFrame([cached_overview[0]])
+            elif isinstance(cached_overview, dict):
+                return pd.DataFrame([cached_overview])
+            else:
+                return pd.DataFrame()
+    
+    # 如果缓存不存在，调用API并保存到缓存
+    print(f"缓存不存在，从API获取 {ticker} 的公司概览数据")
+    try:
+        check_rate_limit()
+        overview, _ = fd.get_company_overview(symbol=ticker)
+        if not isinstance(overview, pd.DataFrame):
+            overview = pd.DataFrame()
+        
+        # 保存到缓存
+        if not overview.empty:
+            overview_dict = overview.to_dict('records')
+            save_to_file_cache('company_overview', ticker, overview_dict)
+            print(f"已缓存 {ticker} 的公司概览数据")
+        
         return overview
-        except Exception as e:
-            print(f"Error getting company overview: {str(e)}")
+    except Exception as e:
+        print(f"获取公司概览数据失败: {e}")
         return pd.DataFrame()
 
 def _safe_get_income_statement_annual(ticker: str, db_cache, cache_params) -> pd.DataFrame:
     """安全获取年度利润表数据"""
-        try:
-            income_stmt, _ = fd.get_income_statement_annual(symbol=ticker)
+    try:
+        income_stmt, _ = fd.get_income_statement_annual(symbol=ticker)
         if isinstance(income_stmt, list):
-                print(f"Warning: fd.get_income_statement_annual returned a list, expected DataFrame. Resetting.")
-                income_stmt = pd.DataFrame()
-            elif not isinstance(income_stmt, pd.DataFrame):
-                print(f"Warning: fd.get_income_statement_annual returned type {type(income_stmt)}, expected DataFrame. Resetting.")
-                income_stmt = pd.DataFrame()
-
+            print(f"Warning: fd.get_income_statement_annual returned a list, expected DataFrame. Resetting.")
+            income_stmt = pd.DataFrame()
+        elif not isinstance(income_stmt, pd.DataFrame):
+            print(f"Warning: fd.get_income_statement_annual returned type {type(income_stmt)}, expected DataFrame. Resetting.")
+            income_stmt = pd.DataFrame()
+        
         # 保存数据
         if isinstance(income_stmt, pd.DataFrame) and len(income_stmt.index) > 0:
-                try:
-                    income_stmt_dict = income_stmt.to_dict('records')
+            try:
+                income_stmt_dict = income_stmt.to_dict('records')
                 db_cache.set_income_statement_annual(ticker, income_stmt_dict)
                 save_to_file_cache('income_statement_annual', ticker, income_stmt_dict, cache_params)
                 print(f"已保存 {ticker} 的利润表（年报）数据，共 {len(income_stmt)} 条记录")
@@ -168,19 +187,19 @@ def _safe_get_income_statement_annual(ticker: str, db_cache, cache_params) -> pd
 
 def _safe_get_income_statement_quarterly(ticker: str, db_cache, cache_params) -> pd.DataFrame:
     """安全获取季度利润表数据"""
-        try:
-            income_stmt_quarterly, _ = fd.get_income_statement_quarterly(symbol=ticker)
+    try:
+        income_stmt_quarterly, _ = fd.get_income_statement_quarterly(symbol=ticker)
         if isinstance(income_stmt_quarterly, list):
-                print(f"Warning: fd.get_income_statement_quarterly returned a list, expected DataFrame. Resetting.")
-                income_stmt_quarterly = pd.DataFrame()
-            elif not isinstance(income_stmt_quarterly, pd.DataFrame):
-                print(f"Warning: fd.get_income_statement_quarterly returned type {type(income_stmt_quarterly)}, expected DataFrame. Resetting.")
-                income_stmt_quarterly = pd.DataFrame()
-
+            print(f"Warning: fd.get_income_statement_quarterly returned a list, expected DataFrame. Resetting.")
+            income_stmt_quarterly = pd.DataFrame()
+        elif not isinstance(income_stmt_quarterly, pd.DataFrame):
+            print(f"Warning: fd.get_income_statement_quarterly returned type {type(income_stmt_quarterly)}, expected DataFrame. Resetting.")
+            income_stmt_quarterly = pd.DataFrame()
+        
         # 保存数据
         if isinstance(income_stmt_quarterly, pd.DataFrame) and len(income_stmt_quarterly.index) > 0:
-                try:
-                    income_stmt_quarterly_dict = income_stmt_quarterly.to_dict('records')
+            try:
+                income_stmt_quarterly_dict = income_stmt_quarterly.to_dict('records')
                 db_cache.set_income_statement_quarterly(ticker, income_stmt_quarterly_dict)
                 save_to_file_cache('income_statement_quarterly', ticker, income_stmt_quarterly_dict, cache_params)
                 print(f"已保存 {ticker} 的利润表（季度）数据，共 {len(income_stmt_quarterly)} 条记录")
@@ -194,19 +213,19 @@ def _safe_get_income_statement_quarterly(ticker: str, db_cache, cache_params) ->
 
 def _safe_get_balance_sheet_annual(ticker: str, db_cache, cache_params) -> pd.DataFrame:
     """安全获取年度资产负债表数据"""
-        try:
-            balance_sheet, _ = fd.get_balance_sheet_annual(symbol=ticker)
+    try:
+        balance_sheet, _ = fd.get_balance_sheet_annual(symbol=ticker)
         if isinstance(balance_sheet, list):
-                print(f"Warning: fd.get_balance_sheet_annual returned a list, expected DataFrame. Resetting.")
-                balance_sheet = pd.DataFrame()
-            elif not isinstance(balance_sheet, pd.DataFrame):
-                print(f"Warning: fd.get_balance_sheet_annual returned type {type(balance_sheet)}, expected DataFrame. Resetting.")
-                balance_sheet = pd.DataFrame()
-
+            print(f"Warning: fd.get_balance_sheet_annual returned a list, expected DataFrame. Resetting.")
+            balance_sheet = pd.DataFrame()
+        elif not isinstance(balance_sheet, pd.DataFrame):
+            print(f"Warning: fd.get_balance_sheet_annual returned type {type(balance_sheet)}, expected DataFrame. Resetting.")
+            balance_sheet = pd.DataFrame()
+        
         # 保存数据
         if isinstance(balance_sheet, pd.DataFrame) and len(balance_sheet.index) > 0:
-                try:
-                    balance_sheet_dict = balance_sheet.to_dict('records')
+            try:
+                balance_sheet_dict = balance_sheet.to_dict('records')
                 db_cache.set_balance_sheet_annual(ticker, balance_sheet_dict)
                 save_to_file_cache('balance_sheet_annual', ticker, balance_sheet_dict, cache_params)
                 print(f"已保存 {ticker} 的资产负债表（年报）数据，共 {len(balance_sheet)} 条记录")
@@ -220,19 +239,19 @@ def _safe_get_balance_sheet_annual(ticker: str, db_cache, cache_params) -> pd.Da
 
 def _safe_get_balance_sheet_quarterly(ticker: str, db_cache, cache_params) -> pd.DataFrame:
     """安全获取季度资产负债表数据"""
-        try:
-            balance_sheet_quarterly, _ = fd.get_balance_sheet_quarterly(symbol=ticker)
+    try:
+        balance_sheet_quarterly, _ = fd.get_balance_sheet_quarterly(symbol=ticker)
         if isinstance(balance_sheet_quarterly, list):
-                print(f"Warning: fd.get_balance_sheet_quarterly returned a list, expected DataFrame. Resetting.")
-                balance_sheet_quarterly = pd.DataFrame()
-            elif not isinstance(balance_sheet_quarterly, pd.DataFrame):
-                print(f"Warning: fd.get_balance_sheet_quarterly returned type {type(balance_sheet_quarterly)}, expected DataFrame. Resetting.")
-                balance_sheet_quarterly = pd.DataFrame()
-
+            print(f"Warning: fd.get_balance_sheet_quarterly returned a list, expected DataFrame. Resetting.")
+            balance_sheet_quarterly = pd.DataFrame()
+        elif not isinstance(balance_sheet_quarterly, pd.DataFrame):
+            print(f"Warning: fd.get_balance_sheet_quarterly returned type {type(balance_sheet_quarterly)}, expected DataFrame. Resetting.")
+            balance_sheet_quarterly = pd.DataFrame()
+        
         # 保存数据
         if isinstance(balance_sheet_quarterly, pd.DataFrame) and len(balance_sheet_quarterly.index) > 0:
-                try:
-                    balance_sheet_quarterly_dict = balance_sheet_quarterly.to_dict('records')
+            try:
+                balance_sheet_quarterly_dict = balance_sheet_quarterly.to_dict('records')
                 db_cache.set_balance_sheet_quarterly(ticker, balance_sheet_quarterly_dict)
                 save_to_file_cache('balance_sheet_quarterly', ticker, balance_sheet_quarterly_dict, cache_params)
                 print(f"已保存 {ticker} 的资产负债表（季度）数据，共 {len(balance_sheet_quarterly)} 条记录")
@@ -246,19 +265,19 @@ def _safe_get_balance_sheet_quarterly(ticker: str, db_cache, cache_params) -> pd
 
 def _safe_get_cash_flow_annual(ticker: str, db_cache, cache_params) -> pd.DataFrame:
     """安全获取年度现金流量表数据"""
-        try:
-            cash_flow, _ = fd.get_cash_flow_annual(symbol=ticker)
+    try:
+        cash_flow, _ = fd.get_cash_flow_annual(symbol=ticker)
         if isinstance(cash_flow, list):
-                print(f"Warning: fd.get_cash_flow_annual returned a list, expected DataFrame. Resetting.")
-                cash_flow = pd.DataFrame()
-            elif not isinstance(cash_flow, pd.DataFrame):
-                print(f"Warning: fd.get_cash_flow_annual returned type {type(cash_flow)}, expected DataFrame. Resetting.")
-                cash_flow = pd.DataFrame()
-
+            print(f"Warning: fd.get_cash_flow_annual returned a list, expected DataFrame. Resetting.")
+            cash_flow = pd.DataFrame()
+        elif not isinstance(cash_flow, pd.DataFrame):
+            print(f"Warning: fd.get_cash_flow_annual returned type {type(cash_flow)}, expected DataFrame. Resetting.")
+            cash_flow = pd.DataFrame()
+        
         # 保存数据
         if isinstance(cash_flow, pd.DataFrame) and len(cash_flow.index) > 0:
-                try:
-                    cash_flow_dict = cash_flow.to_dict('records')
+            try:
+                cash_flow_dict = cash_flow.to_dict('records')
                 db_cache.set_cash_flow_annual(ticker, cash_flow_dict)
                 save_to_file_cache('cash_flow_annual', ticker, cash_flow_dict, cache_params)
                 print(f"已保存 {ticker} 的现金流量表（年报）数据，共 {len(cash_flow)} 条记录")
@@ -272,22 +291,22 @@ def _safe_get_cash_flow_annual(ticker: str, db_cache, cache_params) -> pd.DataFr
 
 def _safe_get_cash_flow_quarterly(ticker: str, db_cache, cache_params) -> pd.DataFrame:
     """安全获取季度现金流量表数据"""
-        try:
-            cash_flow_quarterly, _ = fd.get_cash_flow_quarterly(symbol=ticker)
+    try:
+        cash_flow_quarterly, _ = fd.get_cash_flow_quarterly(symbol=ticker)
         if isinstance(cash_flow_quarterly, list):
-                print(f"Warning: fd.get_cash_flow_quarterly for {ticker} returned a list, expected DataFrame. Resetting.")
-                cash_flow_quarterly = pd.DataFrame()
-            elif not isinstance(cash_flow_quarterly, pd.DataFrame):
-                print(f"Warning: fd.get_cash_flow_quarterly for {ticker} returned type {type(cash_flow_quarterly)}, expected DataFrame. Resetting.")
-                cash_flow_quarterly = pd.DataFrame()
+            print(f"Warning: fd.get_cash_flow_quarterly for {ticker} returned a list, expected DataFrame. Resetting.")
+            cash_flow_quarterly = pd.DataFrame()
+        elif not isinstance(cash_flow_quarterly, pd.DataFrame):
+            print(f"Warning: fd.get_cash_flow_quarterly for {ticker} returned type {type(cash_flow_quarterly)}, expected DataFrame. Resetting.")
+            cash_flow_quarterly = pd.DataFrame()
         
-            if cash_flow_quarterly.empty:
-                print(f"Info: fd.get_cash_flow_quarterly for {ticker} returned an empty DataFrame. This might be due to no data or an API issue not causing an exception.")
+        if cash_flow_quarterly.empty:
+            print(f"Info: fd.get_cash_flow_quarterly for {ticker} returned an empty DataFrame. This might be due to no data or an API issue not causing an exception.")
 
         # 保存数据
         if isinstance(cash_flow_quarterly, pd.DataFrame) and len(cash_flow_quarterly.index) > 0:
-                try:
-                    cash_flow_quarterly_dict = cash_flow_quarterly.to_dict('records')
+            try:
+                cash_flow_quarterly_dict = cash_flow_quarterly.to_dict('records')
                 db_cache.set_cash_flow_quarterly(ticker, cash_flow_quarterly_dict)
                 save_to_file_cache('cash_flow_quarterly', ticker, cash_flow_quarterly_dict, cache_params)
                 print(f"已保存 {ticker} 的现金流量表（季度）数据，共 {len(cash_flow_quarterly)} 条记录")
@@ -302,63 +321,63 @@ def _safe_get_cash_flow_quarterly(ticker: str, db_cache, cache_params) -> pd.Dat
 def _calculate_financial_metrics(ticker: str, income_stmt: pd.DataFrame, balance_sheet: pd.DataFrame, 
                                 cash_flow: pd.DataFrame, overview: pd.DataFrame) -> list:
     """计算财务指标"""
-        try:
-            operating_cash = 0
-            capex = 0
-            shares = 0
-            
-            if "operatingCashflow" in cash_flow.columns and len(cash_flow.index) > 0:
-                operating_cash = float(cash_flow["operatingCashflow"].iloc[0])
-            
-            if "capitalExpenditures" in cash_flow.columns and len(cash_flow.index) > 0:
-                capex = float(cash_flow["capitalExpenditures"].iloc[0])
-            
-            if "SharesOutstanding" in overview.columns and len(overview.index) > 0:
-                shares = float(overview["SharesOutstanding"].iloc[0])
-            
-            free_cash_flow = operating_cash - capex
-            free_cash_flow_per_share = free_cash_flow / shares if shares != 0 else 0
-            
-            # 计算股权发行与回购净额
-            issuance_or_purchase_of_equity_shares = 0
-            if len(cash_flow.index) > 0:
-                # 计算股权发行净额
-                equity_issuance = 0
-                if "proceedsFromIssuanceOfCommonStock" in cash_flow.columns:
-                    common_stock_issuance = cash_flow["proceedsFromIssuanceOfCommonStock"].iloc[0]
-                    if common_stock_issuance and common_stock_issuance != 'None':
-                        equity_issuance += float(common_stock_issuance)
-                if "proceedsFromIssuanceOfPreferredStock" in cash_flow.columns:
-                    preferred_stock_issuance = cash_flow["proceedsFromIssuanceOfPreferredStock"].iloc[0]
-                    if preferred_stock_issuance and preferred_stock_issuance != 'None':
-                        equity_issuance += float(preferred_stock_issuance)
-                
-                # 计算股权回购净额
-                equity_repurchase = 0
-                if "paymentsForRepurchaseOfCommonStock" in cash_flow.columns:
-                    common_stock_repurchase = cash_flow["paymentsForRepurchaseOfCommonStock"].iloc[0]
-                    if common_stock_repurchase and common_stock_repurchase != 'None':
-                        equity_repurchase += float(common_stock_repurchase)
-                if "paymentsForRepurchaseOfEquity" in cash_flow.columns:
-                    equity_repurchase_general = cash_flow["paymentsForRepurchaseOfEquity"].iloc[0]
-                    if equity_repurchase_general and equity_repurchase_general != 'None':
-                        equity_repurchase += float(equity_repurchase_general)
-                if "paymentsForRepurchaseOfPreferredStock" in cash_flow.columns:
-                    preferred_stock_repurchase = cash_flow["paymentsForRepurchaseOfPreferredStock"].iloc[0]
-                    if preferred_stock_repurchase and preferred_stock_repurchase != 'None':
-                        equity_repurchase += float(preferred_stock_repurchase)
-                
-                # 计算净额
-                issuance_or_purchase_of_equity_shares = equity_issuance - equity_repurchase
-        except Exception as e:
-            print(f"Error calculating equity issuance/repurchase: {str(e)}")
-            issuance_or_purchase_of_equity_shares = 0
+    try:
+        operating_cash = 0
+        capex = 0
+        shares = 0
         
-        # 获取财报日期
-        report_date = None
-        if "fiscalDateEnding" in income_stmt.columns and len(income_stmt.index) > 0:
-            report_date = income_stmt["fiscalDateEnding"].iloc[0]
+        if "operatingCashflow" in cash_flow.columns and len(cash_flow.index) > 0:
+            operating_cash = float(cash_flow["operatingCashflow"].iloc[0])
         
+        if "capitalExpenditures" in cash_flow.columns and len(cash_flow.index) > 0:
+            capex = float(cash_flow["capitalExpenditures"].iloc[0])
+        
+        if "SharesOutstanding" in overview.columns and len(overview.index) > 0:
+            shares = float(overview["SharesOutstanding"].iloc[0])
+        
+        free_cash_flow = operating_cash - capex
+        free_cash_flow_per_share = free_cash_flow / shares if shares != 0 else 0
+        
+        # 计算股权发行与回购净额
+        issuance_or_purchase_of_equity_shares = 0
+        if len(cash_flow.index) > 0:
+            # 计算股权发行净额
+            equity_issuance = 0
+            if "proceedsFromIssuanceOfCommonStock" in cash_flow.columns:
+                common_stock_issuance = cash_flow["proceedsFromIssuanceOfCommonStock"].iloc[0]
+                if common_stock_issuance and common_stock_issuance != 'None':
+                    equity_issuance += float(common_stock_issuance)
+            if "proceedsFromIssuanceOfPreferredStock" in cash_flow.columns:
+                preferred_stock_issuance = cash_flow["proceedsFromIssuanceOfPreferredStock"].iloc[0]
+                if preferred_stock_issuance and preferred_stock_issuance != 'None':
+                    equity_issuance += float(preferred_stock_issuance)
+            
+            # 计算股权回购净额
+            equity_repurchase = 0
+            if "paymentsForRepurchaseOfCommonStock" in cash_flow.columns:
+                common_stock_repurchase = cash_flow["paymentsForRepurchaseOfCommonStock"].iloc[0]
+                if common_stock_repurchase and common_stock_repurchase != 'None':
+                    equity_repurchase += float(common_stock_repurchase)
+            if "paymentsForRepurchaseOfEquity" in cash_flow.columns:
+                equity_repurchase_general = cash_flow["paymentsForRepurchaseOfEquity"].iloc[0]
+                if equity_repurchase_general and equity_repurchase_general != 'None':
+                    equity_repurchase += float(equity_repurchase_general)
+            if "paymentsForRepurchaseOfPreferredStock" in cash_flow.columns:
+                preferred_stock_repurchase = cash_flow["paymentsForRepurchaseOfPreferredStock"].iloc[0]
+                if preferred_stock_repurchase and preferred_stock_repurchase != 'None':
+                    equity_repurchase += float(preferred_stock_repurchase)
+            
+            # 计算净额
+            issuance_or_purchase_of_equity_shares = equity_issuance - equity_repurchase
+    except Exception as e:
+        print(f"Error calculating equity issuance/repurchase: {str(e)}")
+        issuance_or_purchase_of_equity_shares = 0
+    
+    # 获取财报日期
+    report_date = None
+    if "fiscalDateEnding" in income_stmt.columns and len(income_stmt.index) > 0:
+        report_date = income_stmt["fiscalDateEnding"].iloc[0]
+    
     # 计算财务指标 - 如果数据不存在，显示为None而不是0
     def safe_get_float(df, column, default=None):
         """安全获取数值，如果列不存在或为空则返回default"""
@@ -370,7 +389,7 @@ def _calculate_financial_metrics(ticker: str, income_stmt: pd.DataFrame, balance
                 return default
         return default
     
-        metrics_data = {
+    metrics_data = {
         "return_on_equity": safe_get_float(overview, "ReturnOnEquityTTM"),
         "net_margin": safe_get_float(overview, "ProfitMargin"),
         "operating_margin": safe_get_float(overview, "OperatingMarginTTM"),
@@ -384,24 +403,24 @@ def _calculate_financial_metrics(ticker: str, income_stmt: pd.DataFrame, balance
         "price_to_sales_ratio": safe_get_float(overview, "PriceToSalesRatioTTM"),
         "earnings_per_share": safe_get_float(overview, "EPS"),
         "free_cash_flow_per_share": free_cash_flow_per_share if shares != 0 else None,
-            "issuance_or_purchase_of_equity_shares": issuance_or_purchase_of_equity_shares,
+        "issuance_or_purchase_of_equity_shares": issuance_or_purchase_of_equity_shares,
         "enterprise_value": safe_get_float(overview, "EnterpriseValue"),
         "enterprise_value_to_ebitda_ratio": safe_get_float(overview, "EVToEBITDA"),
         "market_cap": safe_get_float(overview, "MarketCapitalization"),
-            "report_period": report_date or datetime.now().strftime('%Y-%m-%d')
-        }
+        "report_period": report_date or datetime.now().strftime('%Y-%m-%d')
+    }
     
     # 清理None值，对于确实需要显示缺失数据的情况
     missing_fields = [k for k, v in metrics_data.items() if v is None]
     if missing_fields:
         print(f"Warning: {ticker} 缺失以下财务指标: {', '.join(missing_fields)}")
     
-        metrics = MetricsWrapper(metrics_data)
+    metrics = MetricsWrapper(metrics_data)
     return [metrics]
-        
+
 def _get_default_metrics() -> list:
     """获取默认的空指标"""
-        default_data = {
+    default_data = {
         "return_on_equity": None,
         "net_margin": None,
         "operating_margin": None,
@@ -419,9 +438,9 @@ def _get_default_metrics() -> list:
         "enterprise_value": None,
         "enterprise_value_to_ebitda_ratio": None,
         "market_cap": None,
-            "report_period": datetime.now().strftime('%Y-%m-%d')
-        }
-        return [MetricsWrapper(default_data)]
+        "report_period": datetime.now().strftime('%Y-%m-%d')
+    }
+    return [MetricsWrapper(default_data)]
 
 def search_line_items(ticker: str, line_items: list, end_date: str = None, period: str = "ttm", limit: int = 2) -> list:
     """使用 Alpha Vantage 获取指定财报项目
@@ -429,7 +448,7 @@ def search_line_items(ticker: str, line_items: list, end_date: str = None, perio
     遵循缓存原则：
     1. 如果当前日期的JSON缓存存在，直接从DB获取数据
     2. 如果不存在，判断是否交易时间，优先请求上一个交易日的数据，然后保存到JSON缓存并更新DB
-
+    
     函数从年报数据中抽取所需的项目（如自由现金流、净利润、收入、经营利润率等），
     返回包含属性访问的 FinancialData 对象列表。
     """
@@ -481,42 +500,6 @@ def _get_line_items_from_db(ticker: str, line_items: list, limit: int, db) -> li
         print(f"从数据库获取line items失败: {e}")
         return []
 
-def _get_overview_from_cache_or_api(ticker: str) -> pd.DataFrame:
-    """优先从缓存获取公司概览数据，如果缓存不存在则调用API"""
-    from src.tools.api_cache import check_current_date_cache_exists, load_from_file_cache, save_to_file_cache
-    
-    # 检查是否有当前日期的公司概览缓存
-    if check_current_date_cache_exists('company_overview', ticker):
-        print(f"从缓存获取 {ticker} 的公司概览数据")
-        cached_overview = load_from_file_cache('company_overview', ticker)
-        if cached_overview is not None:
-            # 如果缓存数据是字典格式，转换为DataFrame
-            if isinstance(cached_overview, list) and len(cached_overview) > 0:
-                return pd.DataFrame([cached_overview[0]])
-            elif isinstance(cached_overview, dict):
-                return pd.DataFrame([cached_overview])
-            else:
-                return pd.DataFrame()
-    
-    # 如果缓存不存在，调用API并保存到缓存
-    print(f"缓存不存在，从API获取 {ticker} 的公司概览数据")
-    try:
-        check_rate_limit()
-        overview, _ = fd.get_company_overview(symbol=ticker)
-        if not isinstance(overview, pd.DataFrame):
-            overview = pd.DataFrame()
-        
-        # 保存到缓存
-        if not overview.empty:
-            overview_dict = overview.to_dict('records')
-            save_to_file_cache('company_overview', ticker, overview_dict)
-            print(f"已缓存 {ticker} 的公司概览数据")
-        
-        return overview
-    except Exception as e:
-        print(f"获取公司概览数据失败: {e}")
-        return pd.DataFrame()
-
 def _fetch_and_get_line_items(ticker: str, line_items: list, limit: int, cache_params) -> list:
     """从API获取财务数据并计算line items"""
     try:
@@ -561,7 +544,7 @@ def _fetch_and_get_line_items(ticker: str, line_items: list, limit: int, cache_p
 def _calculate_line_items(ticker: str, line_items: list, limit: int, income_stmt: pd.DataFrame, 
                          balance_sheet: pd.DataFrame, cash_flow: pd.DataFrame, overview: pd.DataFrame) -> list:
     """计算指定的财报项目"""
-        results = []
+    results = []
     
     # 确保数据是DataFrame格式
     if not isinstance(income_stmt, pd.DataFrame):
@@ -576,17 +559,17 @@ def _calculate_line_items(ticker: str, line_items: list, limit: int, income_stmt
     max_records = min(limit, len(income_stmt)) if len(income_stmt) > 0 else limit
     
     for i in range(max_records):
-            data = {}
-            
-            # 获取财报日期
+        data = {}
+        
+        # 获取财报日期
         if "fiscalDateEnding" in income_stmt.columns.tolist() and i < len(income_stmt):
-                data["report_period"] = income_stmt["fiscalDateEnding"].iloc[i]
-            else:
-                data["report_period"] = datetime.now().strftime('%Y-%m-%d')
+            data["report_period"] = income_stmt["fiscalDateEnding"].iloc[i]
+        else:
+            data["report_period"] = datetime.now().strftime('%Y-%m-%d')
             
-            for item in line_items:
+        for item in line_items:
             # 使用原有的完整逻辑处理每个item
-                mapped_item = FIELD_MAPPING.get(item, item)
+            mapped_item = FIELD_MAPPING.get(item, item)
             
             # 尝试从各个数据源获取数据
             value = None
@@ -637,14 +620,52 @@ def _calculate_line_items(ticker: str, line_items: list, limit: int, income_stmt
                     except Exception as e:
                         print(f"Error processing {item}: {str(e)}")
                 
+                elif item == "working_capital":
+                    try:
+                        # Working Capital = Current Assets - Current Liabilities
+                        if ("totalCurrentAssets" in balance_sheet.columns.tolist() and 
+                            "totalCurrentLiabilities" in balance_sheet.columns.tolist() and i < len(balance_sheet)):
+                            current_assets = float(balance_sheet["totalCurrentAssets"].iloc[i])
+                            current_liabilities = float(balance_sheet["totalCurrentLiabilities"].iloc[i])
+                            value = current_assets - current_liabilities
+                            found = True
+                    except Exception as e:
+                        print(f"Error processing {item}: {str(e)}")
+                
+                elif item == "depreciation_and_amortization":
+                    try:
+                        # 从现金流量表获取折旧和摊销
+                        if "depreciationAndAmortization" in cash_flow.columns.tolist() and i < len(cash_flow):
+                            value = float(cash_flow["depreciationAndAmortization"].iloc[i])
+                            found = True
+                        elif "depreciation" in cash_flow.columns.tolist() and i < len(cash_flow):
+                            value = float(cash_flow["depreciation"].iloc[i])
+                            found = True
+                        elif "depreciationDepletionAndAmortization" in cash_flow.columns.tolist() and i < len(cash_flow):
+                            value = float(cash_flow["depreciationDepletionAndAmortization"].iloc[i])
+                            found = True
+                    except Exception as e:
+                        print(f"Error processing {item}: {str(e)}")
+                
+                elif item == "capital_expenditure":
+                    try:
+                        # 资本支出通常在现金流量表中
+                        if "capitalExpenditures" in cash_flow.columns.tolist() and i < len(cash_flow):
+                            value = float(cash_flow["capitalExpenditures"].iloc[i])
+                            # 通常资本支出是负数，但我们需要正数用于计算
+                            value = abs(value)
+                            found = True
+                    except Exception as e:
+                        print(f"Error processing {item}: {str(e)}")
+                
                 elif item == "earnings_per_share":
                     try:
                         if "netIncome" in income_stmt.columns.tolist() and i < len(income_stmt):
-                        net_income = float(income_stmt["netIncome"].iloc[i])
-                        shares = 0
+                            net_income = float(income_stmt["netIncome"].iloc[i])
+                            shares = 0
                             if ("commonStockSharesOutstanding" in balance_sheet.columns.tolist() and 
                                 i < len(balance_sheet)):
-                            shares = float(balance_sheet["commonStockSharesOutstanding"].iloc[i])
+                                shares = float(balance_sheet["commonStockSharesOutstanding"].iloc[i])
                             elif "SharesOutstanding" in overview.columns.tolist() and len(overview) > 0:
                                 shares = float(overview["SharesOutstanding"].iloc[0])
                             if shares != 0:
@@ -653,327 +674,37 @@ def _calculate_line_items(ticker: str, line_items: list, limit: int, income_stmt
                     except Exception as e:
                         print(f"Error processing {item}: {str(e)}")
                 
-                elif item == "book_value_per_share":
-                    try:
-                        if "totalShareholderEquity" in balance_sheet.columns.tolist() and i < len(balance_sheet):
-                        equity = float(balance_sheet["totalShareholderEquity"].iloc[i])
-                        shares = 0
-                            if ("commonStockSharesOutstanding" in balance_sheet.columns.tolist() and 
-                                i < len(balance_sheet)):
-                            shares = float(balance_sheet["commonStockSharesOutstanding"].iloc[i])
-                            if shares != 0:
-                                value = equity / shares
-                                found = True
-                    except Exception as e:
-                        print(f"Error processing {item}: {str(e)}")
-                
-                elif item == "current_assets":
-                    try:
-                        if "totalCurrentAssets" in balance_sheet.columns.tolist() and i < len(balance_sheet):
-                            value = float(balance_sheet["totalCurrentAssets"].iloc[i])
-                            found = True
-                    except Exception as e:
-                        print(f"Error processing {item}: {str(e)}")
-                
-                elif item == "current_liabilities":
-                    try:
-                        if "totalCurrentLiabilities" in balance_sheet.columns.tolist() and i < len(balance_sheet):
-                            value = float(balance_sheet["totalCurrentLiabilities"].iloc[i])
-                            found = True
-                    except Exception as e:
-                        print(f"Error processing {item}: {str(e)}")
-                
-                elif item == "depreciation_and_amortization":
-                    try:
-                        if "depreciationDepletionAndAmortization" in cash_flow.columns.tolist() and i < len(cash_flow):
-                            value = float(cash_flow["depreciationDepletionAndAmortization"].iloc[i])
-                            found = True
-                    except Exception as e:
-                        print(f"Error processing {item}: {str(e)}")
-                
-                elif item == "capital_expenditure":
-                    try:
-                        if "capitalExpenditures" in cash_flow.columns.tolist() and i < len(cash_flow):
-                            value = float(cash_flow["capitalExpenditures"].iloc[i])
-                            found = True
-                    except Exception as e:
-                        print(f"Error processing {item}: {str(e)}")
-                
-                elif item == "working_capital":
-                    try:
-                        if ("totalCurrentAssets" in balance_sheet.columns.tolist() and 
-                            "totalCurrentLiabilities" in balance_sheet.columns.tolist() and i < len(balance_sheet)):
-                        current_assets = float(balance_sheet["totalCurrentAssets"].iloc[i])
-                        current_liabilities = float(balance_sheet["totalCurrentLiabilities"].iloc[i])
-                            value = current_assets - current_liabilities
-                            found = True
-                    except Exception as e:
-                        print(f"Error processing {item}: {str(e)}")
-                
-                elif item == "revenue":
-                    try:
-                        if "totalRevenue" in income_stmt.columns.tolist() and i < len(income_stmt):
-                            value = float(income_stmt["totalRevenue"].iloc[i])
-                            found = True
-                    except Exception as e:
-                        print(f"Error processing {item}: {str(e)}")
-                
-                elif item == "operating_margin":
-                    if "OperatingMarginTTM" in overview.columns.tolist() and len(overview) > 0:
-                        try:
-                            value = float(overview["OperatingMarginTTM"].iloc[0])
-                            found = True
-                        except (ValueError, TypeError):
-                            pass
-                
-                elif item == "debt_to_equity":
-                    try:
-                        if ("totalLiabilities" in balance_sheet.columns.tolist() and 
-                            "totalShareholderEquity" in balance_sheet.columns.tolist() and i < len(balance_sheet)):
-                        total_liabilities = float(balance_sheet["totalLiabilities"].iloc[i])
-                        shareholders_equity = float(balance_sheet["totalShareholderEquity"].iloc[i])
-                            if shareholders_equity != 0:
-                                value = total_liabilities / shareholders_equity
-                                found = True
-                    except Exception as e:
-                        print(f"Error processing {item}: {str(e)}")
-                
-                elif item == "total_assets":
-                    try:
-                        if "totalAssets" in balance_sheet.columns.tolist() and i < len(balance_sheet):
-                            value = float(balance_sheet["totalAssets"].iloc[i])
-                            found = True
-                    except Exception as e:
-                        print(f"Error processing {item}: {str(e)}")
-                
-                elif item == "total_liabilities":
-                    try:
-                        if "totalLiabilities" in balance_sheet.columns.tolist() and i < len(balance_sheet):
-                            value = float(balance_sheet["totalLiabilities"].iloc[i])
-                            found = True
-                    except Exception as e:
-                        print(f"Error processing {item}: {str(e)}")
-                
-                elif item == "dividends_and_other_cash_distributions":
-                    # ALPHA VANTAGE 暂未提供此项数据
-                    value = None
-                    found = True  # 明确标记为找到但值为None
-                
-                # 继续所有其他已有的item处理...
-                elif item == "outstanding_shares":
-                    try:
-                        if ("commonStockSharesOutstanding" in balance_sheet.columns.tolist() and 
-                            i < len(balance_sheet)):
-                            value = float(balance_sheet["commonStockSharesOutstanding"].iloc[i])
-                            found = True
-                        elif "SharesOutstanding" in overview.columns.tolist() and len(overview) > 0:
-                            value = float(overview["SharesOutstanding"].iloc[0])
-                            found = True
-                    except Exception as e:
-                        print(f"Error processing {item}: {str(e)}")
-                
-                elif item == "operating_income":
-                    try:
-                        if "operatingIncome" in income_stmt.columns.tolist() and i < len(income_stmt):
-                            value = float(income_stmt["operatingIncome"].iloc[i])
-                            found = True
-                        elif ("totalRevenue" in income_stmt.columns.tolist() and 
-                              "operatingExpenses" in income_stmt.columns.tolist() and i < len(income_stmt)):
-                            revenue = float(income_stmt["totalRevenue"].iloc[i])
-                            operating_expenses = float(income_stmt["operatingExpenses"].iloc[i])
-                            value = revenue - operating_expenses
-                            found = True
-                    except Exception as e:
-                        print(f"Error processing {item}: {str(e)}")
-                
-                elif item == "return_on_invested_capital":
-                    try:
-                        if ("netIncome" in income_stmt.columns.tolist() and 
-                            "totalAssets" in balance_sheet.columns.tolist() and 
-                            "totalCurrentLiabilities" in balance_sheet.columns.tolist() and 
-                            i < len(income_stmt) and i < len(balance_sheet)):
-                            net_income = float(income_stmt["netIncome"].iloc[i])
-                            total_assets = float(balance_sheet["totalAssets"].iloc[i])
-                            current_liabilities = float(balance_sheet["totalCurrentLiabilities"].iloc[i])
-                            invested_capital = total_assets - current_liabilities
-                            if invested_capital != 0:
-                                value = net_income / invested_capital
-                                found = True
-                    except Exception as e:
-                        print(f"Error processing {item}: {str(e)}")
-                
-                elif item == "cash_and_equivalents":
-                    try:
-                        if "cashAndCashEquivalentsAtCarryingValue" in balance_sheet.columns.tolist() and i < len(balance_sheet):
-                            value = float(balance_sheet["cashAndCashEquivalentsAtCarryingValue"].iloc[i])
-                            found = True
-                        elif "cashAndShortTermInvestments" in balance_sheet.columns.tolist() and i < len(balance_sheet):
-                            value = float(balance_sheet["cashAndShortTermInvestments"].iloc[i])
-                            found = True
-                    except Exception as e:
-                        print(f"Error processing {item}: {str(e)}")
-                
-                elif item == "total_debt":
-                    try:
-                        if "shortLongTermDebtTotal" in balance_sheet.columns.tolist() and i < len(balance_sheet):
-                            value = float(balance_sheet["shortLongTermDebtTotal"].iloc[i])
-                            found = True
-                        else:
-                            short_term_debt = 0
-                            long_term_debt = 0
-                            current_long_term_debt = 0
-                            
-                            if "shortTermDebt" in balance_sheet.columns.tolist() and i < len(balance_sheet):
-                                short_term_debt = float(balance_sheet["shortTermDebt"].iloc[i])
-                            if "longTermDebt" in balance_sheet.columns.tolist() and i < len(balance_sheet):
-                                long_term_debt = float(balance_sheet["longTermDebt"].iloc[i])
-                            if "currentLongTermDebt" in balance_sheet.columns.tolist() and i < len(balance_sheet):
-                                current_long_term_debt = float(balance_sheet["currentLongTermDebt"].iloc[i])
-                            
-                            value = short_term_debt + long_term_debt + current_long_term_debt
-                            found = True
-                    except Exception as e:
-                        print(f"Error processing {item}: {str(e)}")
-                
-                elif item == "shareholders_equity":
-                    try:
-                        if "totalShareholderEquity" in balance_sheet.columns.tolist() and i < len(balance_sheet):
-                            value = float(balance_sheet["totalShareholderEquity"].iloc[i])
-                            found = True
-                        elif "totalStockholdersEquity" in balance_sheet.columns.tolist() and i < len(balance_sheet):
-                            value = float(balance_sheet["totalStockholdersEquity"].iloc[i])
-                            found = True
-                    except Exception as e:
-                        print(f"Error processing {item}: {str(e)}")
-                
-                elif item == "operating_expense":
-                    try:
-                        if "operatingExpenses" in income_stmt.columns.tolist() and i < len(income_stmt):
-                            value = float(income_stmt["operatingExpenses"].iloc[i])
-                            found = True
-                        elif "totalOperatingExpenses" in income_stmt.columns.tolist() and i < len(income_stmt):
-                            value = float(income_stmt["totalOperatingExpenses"].iloc[i])
-                            found = True
-                        elif ("totalRevenue" in income_stmt.columns.tolist() and 
-                              "operatingIncome" in income_stmt.columns.tolist() and i < len(income_stmt)):
-                            revenue = float(income_stmt["totalRevenue"].iloc[i])
-                            op_income = float(income_stmt["operatingIncome"].iloc[i])
-                            value = revenue - op_income
-                            found = True
-                    except Exception as e:
-                        print(f"Error processing {item}: {str(e)}")
-                
-                elif item == "ebit":
-                    try:
-                        # 使用营业利润率和总收入计算 EBIT
-                        if ("OperatingMarginTTM" in overview.columns.tolist() and 
-                            "RevenueTTM" in overview.columns.tolist() and len(overview) > 0):
-                        operating_margin = float(overview["OperatingMarginTTM"].iloc[0])
-                        revenue = float(overview["RevenueTTM"].iloc[0])
-                            value = operating_margin * revenue
-                            found = True
-                    except Exception as e:
-                        print(f"Error processing {item}: {str(e)}")
-                
-                elif item == "ebitda":
-                    try:
-                        # 直接从 overview 获取
-                        if "EBITDA" in overview.columns.tolist() and len(overview) > 0:
-                            value = float(overview["EBITDA"].iloc[0])
-                            found = True
-                    except Exception as e:
-                        print(f"Error processing {item}: {str(e)}")
-                
-                elif item == "goodwill_and_intangible_assets":
-                    try:
-                        goodwill = 0
-                        intangible_assets = 0
-                        if "goodwill" in balance_sheet.columns.tolist() and i < len(balance_sheet):
-                            goodwill_val = balance_sheet["goodwill"].iloc[i]
-                            if goodwill_val and goodwill_val != 'None':
-                                goodwill = float(goodwill_val)
-                        if "intangibleAssets" in balance_sheet.columns.tolist() and i < len(balance_sheet):
-                            intangible_val = balance_sheet["intangibleAssets"].iloc[i]
-                            if intangible_val and intangible_val != 'None':
-                                intangible_assets = float(intangible_val)
-                        value = goodwill + intangible_assets
-                        found = True
-                    except Exception as e:
-                        print(f"Error processing {item}: {str(e)}")
-                
-                elif item == "gross_margin":
-                    try:
-                        if "totalRevenue" in income_stmt.columns.tolist() and i < len(income_stmt):
-                            total_revenue = float(income_stmt["totalRevenue"].iloc[i])
-                        if total_revenue:
-                            if "grossProfit" in income_stmt.columns.tolist():
-                                gross_profit = float(income_stmt["grossProfit"].iloc[i])
-                                    value = gross_profit / total_revenue
-                                    found = True
-                            elif "costOfRevenue" in income_stmt.columns.tolist():
-                                cost_rev = float(income_stmt["costOfRevenue"].iloc[i])
-                                    value = (total_revenue - cost_rev) / total_revenue
-                                    found = True
-                    except Exception as e:
-                        print(f"Error processing {item}: {str(e)}")
-                
-                elif item == "research_and_development":
-                    try:
-                        if "researchAndDevelopment" in income_stmt.columns.tolist() and i < len(income_stmt):
-                            value = float(income_stmt["researchAndDevelopment"].iloc[i])
-                            found = True
-                        elif "researchAndDevelopmentExpense" in income_stmt.columns.tolist() and i < len(income_stmt):
-                            value = float(income_stmt["researchAndDevelopmentExpense"].iloc[i])
-                            found = True
-                    except Exception as e:
-                        print(f"Error processing {item}: {str(e)}")
-                
                 elif item == "issuance_or_purchase_of_equity_shares":
                     try:
-                        # 计算股权发行净额
-                        equity_issuance = 0
-                        if "proceedsFromIssuanceOfCommonStock" in cash_flow.columns.tolist() and i < len(cash_flow):
-                            common_stock_issuance = cash_flow["proceedsFromIssuanceOfCommonStock"].iloc[i]
-                            if common_stock_issuance and common_stock_issuance != 'None':
-                                equity_issuance += float(common_stock_issuance)
-                        if "proceedsFromIssuanceOfPreferredStock" in cash_flow.columns.tolist() and i < len(cash_flow):
-                            preferred_stock_issuance = cash_flow["proceedsFromIssuanceOfPreferredStock"].iloc[i]
-                            if preferred_stock_issuance and preferred_stock_issuance != 'None':
-                                equity_issuance += float(preferred_stock_issuance)
-                        
-                        # 计算股权回购净额
-                        equity_repurchase = 0
-                        if "paymentsForRepurchaseOfCommonStock" in cash_flow.columns.tolist() and i < len(cash_flow):
-                            common_stock_repurchase = cash_flow["paymentsForRepurchaseOfCommonStock"].iloc[i]
-                            if common_stock_repurchase and common_stock_repurchase != 'None':
-                                equity_repurchase += float(common_stock_repurchase)
-                        if "paymentsForRepurchaseOfEquity" in cash_flow.columns.tolist() and i < len(cash_flow):
-                            equity_repurchase_general = cash_flow["paymentsForRepurchaseOfEquity"].iloc[i]
-                            if equity_repurchase_general and equity_repurchase_general != 'None':
-                                equity_repurchase += float(equity_repurchase_general)
-                        if "paymentsForRepurchaseOfPreferredStock" in cash_flow.columns.tolist() and i < len(cash_flow):
-                            preferred_stock_repurchase = cash_flow["paymentsForRepurchaseOfPreferredStock"].iloc[i]
-                            if preferred_stock_repurchase and preferred_stock_repurchase != 'None':
-                                equity_repurchase += float(preferred_stock_repurchase)
-                        
-                        # 计算净额
-                        value = equity_issuance - equity_repurchase
-                        found = True
-                    except Exception as e:
-                        print(f"Error processing {item}: {str(e)}")
-                
-                elif item == "interest_expense":
-                    try:
-                        if "interestExpense" in income_stmt.columns.tolist() and i < len(income_stmt):
-                            value = float(income_stmt["interestExpense"].iloc[i])
-                            found = True
-                        elif "interestAndDebtExpense" in income_stmt.columns.tolist() and i < len(income_stmt):
-                            value = float(income_stmt["interestAndDebtExpense"].iloc[i])
-                            found = True
-                        elif "interestIncomeExpenseNet" in income_stmt.columns.tolist() and i < len(income_stmt):
-                            # 如果只有净利息收入/支出，我们取绝对值作为利息支出
-                            net_interest = float(income_stmt["interestIncomeExpenseNet"].iloc[i])
-                            value = abs(net_interest) if net_interest < 0 else 0
+                        if i < len(cash_flow):
+                            # 计算股权发行净额
+                            equity_issuance = 0
+                            if "proceedsFromIssuanceOfCommonStock" in cash_flow.columns.tolist():
+                                common_stock_issuance = cash_flow["proceedsFromIssuanceOfCommonStock"].iloc[i]
+                                if common_stock_issuance and common_stock_issuance != 'None':
+                                    equity_issuance += float(common_stock_issuance)
+                            if "proceedsFromIssuanceOfPreferredStock" in cash_flow.columns.tolist():
+                                preferred_stock_issuance = cash_flow["proceedsFromIssuanceOfPreferredStock"].iloc[i]
+                                if preferred_stock_issuance and preferred_stock_issuance != 'None':
+                                    equity_issuance += float(preferred_stock_issuance)
+                            
+                            # 计算股权回购净额
+                            equity_repurchase = 0
+                            if "paymentsForRepurchaseOfCommonStock" in cash_flow.columns.tolist():
+                                common_stock_repurchase = cash_flow["paymentsForRepurchaseOfCommonStock"].iloc[i]
+                                if common_stock_repurchase and common_stock_repurchase != 'None':
+                                    equity_repurchase += float(common_stock_repurchase)
+                            if "paymentsForRepurchaseOfEquity" in cash_flow.columns.tolist():
+                                equity_repurchase_general = cash_flow["paymentsForRepurchaseOfEquity"].iloc[i]
+                                if equity_repurchase_general and equity_repurchase_general != 'None':
+                                    equity_repurchase += float(equity_repurchase_general)
+                            if "paymentsForRepurchaseOfPreferredStock" in cash_flow.columns.tolist():
+                                preferred_stock_repurchase = cash_flow["paymentsForRepurchaseOfPreferredStock"].iloc[i]
+                                if preferred_stock_repurchase and preferred_stock_repurchase != 'None':
+                                    equity_repurchase += float(preferred_stock_repurchase)
+                            
+                            # 计算净额
+                            value = equity_issuance - equity_repurchase
                             found = True
                     except Exception as e:
                         print(f"Error processing {item}: {str(e)}")
@@ -981,18 +712,16 @@ def _calculate_line_items(ticker: str, line_items: list, limit: int, income_stmt
             # 设置值，如果未找到则设为None（不使用默认值0）
             if found:
                 data[item] = value
-                else:
+            else:
                 print(f"Warning: 无法找到 {ticker} 的 {item} 数据")
                 data[item] = None
         
-            results.append(MetricsWrapper(data))
+        results.append(MetricsWrapper(data))
     
-        return results
+    return results
 
 def check_and_update_financials(ticker: str):
-    """
-    检查缓存是否需要更新，必要时下载并保存最新财务数据
-    """
+    """检查缓存是否需要更新，必要时下载并保存最新财务数据"""
     try:
         if should_refresh_financial_data(ticker):
             print(f"检测到 {ticker} 财报需要更新，开始下载...")
@@ -1004,15 +733,7 @@ def check_and_update_financials(ticker: str):
         print(f"检查更新财报失败: {e}")
 
 def get_income_statement(ticker: str, period: str = "annual"):
-    """获取利润表数据
-    
-    Args:
-        ticker: 股票代码
-        period: 周期，可选 "annual" 或 "quarterly"，默认为 "annual"
-    
-    Returns:
-        利润表数据列表
-    """
+    """获取利润表数据"""
     check_rate_limit()
     
     try:
@@ -1032,15 +753,7 @@ def get_income_statement(ticker: str, period: str = "annual"):
         return []
 
 def get_balance_sheet(ticker: str, period: str = "annual"):
-    """获取资产负债表数据
-    
-    Args:
-        ticker: 股票代码
-        period: 周期，可选 "annual" 或 "quarterly"，默认为 "annual"
-    
-    Returns:
-        资产负债表数据列表
-    """
+    """获取资产负债表数据"""
     check_rate_limit()
     
     try:
@@ -1060,15 +773,7 @@ def get_balance_sheet(ticker: str, period: str = "annual"):
         return []
 
 def get_cash_flow(ticker: str, period: str = "annual"):
-    """获取现金流量表数据
-    
-    Args:
-        ticker: 股票代码
-        period: 周期，可选 "annual" 或 "quarterly"，默认为 "annual"
-    
-    Returns:
-        现金流量表数据列表
-    """
+    """获取现金流量表数据"""
     check_rate_limit()
     
     try:
@@ -1085,4 +790,4 @@ def get_cash_flow(ticker: str, period: str = "annual"):
         return cash_flow.to_dict('records')
     except Exception as e:
         print(f"获取 {ticker} 的现金流量表数据时出错: {str(e)}")
-        return []
+        return [] 
