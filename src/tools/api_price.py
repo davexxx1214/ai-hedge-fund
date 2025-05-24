@@ -2,35 +2,19 @@
 价格相关API功能
 """
 import pandas as pd
-import ntplib
 from datetime import datetime, timedelta, time
 from pytz import timezone
 import holidays
 
 from src.tools.api_base import ts, check_rate_limit
 from src.tools.api_cache import save_to_file_cache, load_from_file_cache
+from src.tools.trading_utils import get_network_time, is_market_trading_hours, calculate_business_days
 from src.data.db_cache import get_db_cache
 from src.data.database_core import get_db
 from src.data.cache import get_cache
 
 # 内存缓存实例
 cache = get_cache()
-
-def get_network_time():
-    """从NTP服务器获取准确的网络时间"""
-    try:
-        client = ntplib.NTPClient()
-        # 使用公共NTP服务器池
-        response = client.request('pool.ntp.org', timeout=5)
-        # 将NTP时间戳转换为datetime对象（UTC时间）
-        # 注意：使用utcfromtimestamp而不是fromtimestamp，避免本地时区影响
-        utc_time = datetime.utcfromtimestamp(response.tx_time).replace(tzinfo=timezone('UTC'))
-        return utc_time
-    except Exception as e:
-        print(f"获取网络时间失败: {e}")
-        # 如果获取网络时间失败，则使用本地时间作为备选
-        print("使用本地时间作为备选")
-        return datetime.now(timezone('UTC'))
 
 def get_prices(ticker: str, start_date: str, end_date: str = None) -> list:
     """使用 Alpha Vantage 获取历史价格数据
@@ -232,72 +216,6 @@ def get_price_data(ticker: str, start_date: str, end_date: str) -> pd.DataFrame:
     """获取价格数据并转换为 DataFrame"""
     prices = get_prices(ticker, start_date, end_date)
     return prices_to_df(prices)
-
-def calculate_business_days(start_date, end_date):
-    """计算两个日期之间的工作日数量（不包括周末）"""
-    if start_date > end_date:
-        return calculate_business_days(end_date, start_date)
-    
-    # 计算总天数
-    days = (end_date - start_date).days + 1
-    
-    # 计算整周数量
-    weeks = days // 7
-    
-    # 计算剩余天数
-    remaining_days = days % 7
-    
-    # 计算起始日期的星期几（0是周一，6是周日）
-    start_weekday = start_date.weekday()
-    
-    # 计算剩余天数中的周末天数
-    weekend_days = 0
-    for i in range(remaining_days):
-        if (start_weekday + i) % 7 >= 5:  # 5是周六，6是周日
-            weekend_days += 1
-    
-    # 总工作日 = 总天数 - 周末天数
-    business_days = days - (weeks * 2) - weekend_days
-    
-    return business_days
-
-def is_market_trading_hours(dt: datetime = None) -> bool:
-    """判断给定的时间是否在美股交易时间内
-    
-    美股交易时间为：周一至周五，东部时间9:30-16:00，排除节假日
-    
-    参数:
-        dt: 要检查的时间，如果为None则使用网络时间
-    """
-    # 如果没有提供时间，则获取当前网络时间
-    if dt is None:
-        utc_time = get_network_time()
-        # 转换为美国东部时间
-        eastern = timezone('US/Eastern')
-        dt = utc_time.astimezone(eastern)
-        print(f"当前网络时间(美东): {dt}")
-    
-    # 检查是否是工作日（周一至周五）
-    if dt.weekday() >= 5:  # 5是周六，6是周日
-        return False
-    
-    # 检查是否是节假日
-    try:
-        us_holidays = holidays.NYSE(years=dt.year)
-        current_date = dt.date()
-        
-        if current_date in us_holidays:
-            return False
-    except Exception as e:
-        print(f"检查节假日时出错: {e}")
-        # 节假日检查失败时，继续按时间判断
-    
-    # 检查时间是否在交易时间内
-    market_open = time(9, 30)
-    market_close = time(16, 0)
-    current_time = dt.time()
-    
-    return market_open <= current_time < market_close  # 注意：收盘时间用 <，因为 16:00:00 已经收盘
 
 def get_market_cap(ticker: str, end_date: str = None) -> float:
     """使用 Alpha Vantage 获取市值数据"""

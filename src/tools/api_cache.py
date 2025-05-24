@@ -24,6 +24,49 @@ def get_cache_path(cache_type, ticker, params=None):
     
     return CACHE_DIR / cache_type / filename
 
+def check_current_date_cache_exists(cache_type, ticker):
+    """检查当前日期的缓存文件是否存在"""
+    today_str = datetime.now().strftime('%Y%m%d')
+    cache_dir = CACHE_DIR / cache_type
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    
+    if cache_type == 'earnings':
+        cache_file = cache_dir / f"{ticker}_EARNINGS_{today_str}.json"
+    else:
+        cache_file = cache_dir / f"{ticker}_{today_str}.json"
+    
+    return cache_file.exists()
+
+def check_financial_cache_exists(ticker):
+    """检查财务相关的所有缓存是否都存在，包括公司概览数据"""
+    financial_cache_types = [
+        'income_statement_annual',
+        'income_statement_quarterly', 
+        'balance_sheet_annual',
+        'balance_sheet_quarterly',
+        'cash_flow_annual',
+        'cash_flow_quarterly',
+        'company_overview'  # 添加公司概览缓存检查
+    ]
+    
+    for cache_type in financial_cache_types:
+        if not check_current_date_cache_exists(cache_type, ticker):
+            return False
+    
+    return True
+
+def get_target_date_for_financial_data():
+    """获取财务数据的目标日期（当前日期或上一个交易日）"""
+    from src.tools.trading_utils import should_use_previous_trading_day
+    
+    use_previous, target_date = should_use_previous_trading_day()
+    if use_previous:
+        print(f"当前处于交易时间或周末/节假日，将使用上一个交易日数据: {target_date}")
+        return target_date.strftime('%Y-%m-%d')
+    else:
+        print(f"使用当前日期数据: {target_date}")
+        return target_date.strftime('%Y-%m-%d')
+
 def save_to_file_cache(cache_type, ticker, data, params=None):
     """保存数据到文件缓存"""
     cache_path = get_cache_path(cache_type, ticker, params)
