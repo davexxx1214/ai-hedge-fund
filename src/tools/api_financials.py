@@ -714,6 +714,21 @@ def search_line_items(ticker: str, line_items: list, end_date: str = None, perio
                     except Exception as e:
                         print(f"Error processing {item}: {str(e)}")
                         data[item] = 0
+                elif item == "interest_expense":
+                    try:
+                        if "interestExpense" in income_stmt.columns.tolist():
+                            data[item] = float(income_stmt["interestExpense"].iloc[i])
+                        elif "interestAndDebtExpense" in income_stmt.columns.tolist():
+                            data[item] = float(income_stmt["interestAndDebtExpense"].iloc[i])
+                        elif "interestIncomeExpenseNet" in income_stmt.columns.tolist():
+                            # 如果只有净利息收入/支出，我们取绝对值作为利息支出
+                            net_interest = float(income_stmt["interestIncomeExpenseNet"].iloc[i])
+                            data[item] = abs(net_interest) if net_interest < 0 else 0
+                        else:
+                            data[item] = 0
+                    except Exception as e:
+                        print(f"Error processing {item}: {str(e)}")
+                        data[item] = 0
                 else:
                     print(f"Warning: Unknown line item {item}")
             results.append(MetricsWrapper(data))
