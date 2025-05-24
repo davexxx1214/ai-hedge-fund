@@ -389,22 +389,97 @@ def _calculate_financial_metrics(ticker: str, income_stmt: pd.DataFrame, balance
                 return default
         return default
     
+    # 计算book_value_growth (从totalShareholderEquity计算)
+    book_value_growth = None
+    if "totalShareholderEquity" in balance_sheet.columns and len(balance_sheet.index) >= 2:
+        try:
+            current_equity = float(balance_sheet["totalShareholderEquity"].iloc[0])
+            previous_equity = float(balance_sheet["totalShareholderEquity"].iloc[1])
+            if previous_equity != 0:
+                book_value_growth = (current_equity - previous_equity) / previous_equity
+        except (ValueError, TypeError, IndexError):
+            pass
+    
+    # 计算current_ratio (Current Assets / Current Liabilities)
+    current_ratio = None
+    if ("totalCurrentAssets" in balance_sheet.columns and 
+        "totalCurrentLiabilities" in balance_sheet.columns and len(balance_sheet.index) > 0):
+        try:
+            current_assets = float(balance_sheet["totalCurrentAssets"].iloc[0])
+            current_liabilities = float(balance_sheet["totalCurrentLiabilities"].iloc[0])
+            if current_liabilities != 0:
+                current_ratio = current_assets / current_liabilities
+        except (ValueError, TypeError):
+            pass
+    
+    # 计算debt_to_equity (Total Debt / Total Equity)
+    debt_to_equity = None
+    if "totalShareholderEquity" in balance_sheet.columns and len(balance_sheet.index) > 0:
+        try:
+            total_equity = float(balance_sheet["totalShareholderEquity"].iloc[0])
+            # 计算总债务 = 短期债务 + 长期债务
+            total_debt = 0
+            if "shortTermDebt" in balance_sheet.columns:
+                short_debt = balance_sheet["shortTermDebt"].iloc[0]
+                if short_debt and short_debt != 'None':
+                    total_debt += float(short_debt)
+            if "longTermDebt" in balance_sheet.columns:
+                long_debt = balance_sheet["longTermDebt"].iloc[0]
+                if long_debt and long_debt != 'None':
+                    total_debt += float(long_debt)
+            
+            if total_equity != 0:
+                debt_to_equity = total_debt / total_equity
+        except (ValueError, TypeError):
+            pass
+    
+    # 计算enterprise_value (Market Cap + Total Debt - Cash)
+    enterprise_value = None
+    market_cap = safe_get_float(overview, "MarketCapitalization")
+    if market_cap and "totalShareholderEquity" in balance_sheet.columns and len(balance_sheet.index) > 0:
+        try:
+            # 计算总债务
+            total_debt = 0
+            if "shortTermDebt" in balance_sheet.columns:
+                short_debt = balance_sheet["shortTermDebt"].iloc[0]
+                if short_debt and short_debt != 'None':
+                    total_debt += float(short_debt)
+            if "longTermDebt" in balance_sheet.columns:
+                long_debt = balance_sheet["longTermDebt"].iloc[0]
+                if long_debt and long_debt != 'None':
+                    total_debt += float(long_debt)
+            
+            # 获取现金和现金等价物
+            cash = 0
+            if "cashAndCashEquivalentsAtCarryingValue" in balance_sheet.columns:
+                cash_value = balance_sheet["cashAndCashEquivalentsAtCarryingValue"].iloc[0]
+                if cash_value and cash_value != 'None':
+                    cash = float(cash_value)
+            elif "cashAndShortTermInvestments" in balance_sheet.columns:
+                cash_value = balance_sheet["cashAndShortTermInvestments"].iloc[0]
+                if cash_value and cash_value != 'None':
+                    cash = float(cash_value)
+            
+            enterprise_value = market_cap + total_debt - cash
+        except (ValueError, TypeError):
+            pass
+
     metrics_data = {
         "return_on_equity": safe_get_float(overview, "ReturnOnEquityTTM"),
         "net_margin": safe_get_float(overview, "ProfitMargin"),
         "operating_margin": safe_get_float(overview, "OperatingMarginTTM"),
         "revenue_growth": calculate_growth(income_stmt, "totalRevenue") if "totalRevenue" in income_stmt.columns and len(income_stmt.index) > 0 else None,
         "earnings_growth": calculate_growth(income_stmt, "netIncome") if "netIncome" in income_stmt.columns and len(income_stmt.index) > 0 else None,
-        "book_value_growth": calculate_growth(balance_sheet, "totalStockholdersEquity") if "totalStockholdersEquity" in balance_sheet.columns and len(balance_sheet.index) > 0 else None,
-        "current_ratio": safe_get_float(overview, "CurrentRatio"),
-        "debt_to_equity": safe_get_float(overview, "DebtToEquityRatio"),
+        "book_value_growth": book_value_growth,
+        "current_ratio": current_ratio,
+        "debt_to_equity": debt_to_equity,
         "price_to_earnings_ratio": safe_get_float(overview, "PERatio"),
         "price_to_book_ratio": safe_get_float(overview, "PriceToBookRatio"),
         "price_to_sales_ratio": safe_get_float(overview, "PriceToSalesRatioTTM"),
         "earnings_per_share": safe_get_float(overview, "EPS"),
         "free_cash_flow_per_share": free_cash_flow_per_share if shares != 0 else None,
         "issuance_or_purchase_of_equity_shares": issuance_or_purchase_of_equity_shares,
-        "enterprise_value": safe_get_float(overview, "EnterpriseValue"),
+        "enterprise_value": enterprise_value,
         "enterprise_value_to_ebitda_ratio": safe_get_float(overview, "EVToEBITDA"),
         "market_cap": safe_get_float(overview, "MarketCapitalization"),
         "report_period": report_date or datetime.now().strftime('%Y-%m-%d')
@@ -706,6 +781,121 @@ def _calculate_line_items(ticker: str, line_items: list, limit: int, income_stmt
                             # 计算净额
                             value = equity_issuance - equity_repurchase
                             found = True
+                    except Exception as e:
+                        print(f"Error processing {item}: {str(e)}")
+                
+                elif item == "gross_margin":
+                    try:
+                        # Gross Margin = Gross Profit / Total Revenue
+                        if ("grossProfit" in income_stmt.columns.tolist() and 
+                            "totalRevenue" in income_stmt.columns.tolist() and i < len(income_stmt)):
+                            gross_profit = float(income_stmt["grossProfit"].iloc[i])
+                            total_revenue = float(income_stmt["totalRevenue"].iloc[i])
+                            if total_revenue != 0:
+                                value = gross_profit / total_revenue
+                                found = True
+                    except Exception as e:
+                        print(f"Error processing {item}: {str(e)}")
+                
+                elif item == "operating_margin":
+                    try:
+                        # Operating Margin = Operating Income / Total Revenue
+                        if ("operatingIncome" in income_stmt.columns.tolist() and 
+                            "totalRevenue" in income_stmt.columns.tolist() and i < len(income_stmt)):
+                            operating_income = float(income_stmt["operatingIncome"].iloc[i])
+                            total_revenue = float(income_stmt["totalRevenue"].iloc[i])
+                            if total_revenue != 0:
+                                value = operating_income / total_revenue
+                                found = True
+                    except Exception as e:
+                        print(f"Error processing {item}: {str(e)}")
+                
+                elif item == "research_and_development":
+                    try:
+                        # 研发费用直接从利润表获取
+                        if "researchAndDevelopment" in income_stmt.columns.tolist() and i < len(income_stmt):
+                            value = float(income_stmt["researchAndDevelopment"].iloc[i])
+                            found = True
+                    except Exception as e:
+                        print(f"Error processing {item}: {str(e)}")
+                
+                elif item == "total_debt":
+                    try:
+                        # Total Debt = Short Term Debt + Long Term Debt
+                        total_debt = 0
+                        debt_found = False
+                        
+                        if i < len(balance_sheet):
+                            # 短期债务
+                            if "shortTermDebt" in balance_sheet.columns.tolist():
+                                short_term_debt = balance_sheet["shortTermDebt"].iloc[i]
+                                if short_term_debt and short_term_debt != 'None':
+                                    total_debt += float(short_term_debt)
+                                    debt_found = True
+                            
+                            # 长期债务
+                            if "longTermDebt" in balance_sheet.columns.tolist():
+                                long_term_debt = balance_sheet["longTermDebt"].iloc[i]
+                                if long_term_debt and long_term_debt != 'None':
+                                    total_debt += float(long_term_debt)
+                                    debt_found = True
+                            
+                            # 总债务（如果直接可用）
+                            if "totalDebt" in balance_sheet.columns.tolist():
+                                total_debt_direct = balance_sheet["totalDebt"].iloc[i]
+                                if total_debt_direct and total_debt_direct != 'None':
+                                    total_debt = float(total_debt_direct)
+                                    debt_found = True
+                        
+                        if debt_found:
+                            value = total_debt
+                            found = True
+                    except Exception as e:
+                        print(f"Error processing {item}: {str(e)}")
+                
+                elif item == "goodwill_and_intangible_assets":
+                    try:
+                        # 商誉和无形资产
+                        if i < len(balance_sheet):
+                            goodwill_total = 0
+                            goodwill_found = False
+                            
+                            if "goodwill" in balance_sheet.columns.tolist():
+                                goodwill = balance_sheet["goodwill"].iloc[i]
+                                if goodwill and goodwill != 'None':
+                                    goodwill_total += float(goodwill)
+                                    goodwill_found = True
+                            
+                            if "intangibleAssets" in balance_sheet.columns.tolist():
+                                intangible = balance_sheet["intangibleAssets"].iloc[i]
+                                if intangible and intangible != 'None':
+                                    goodwill_total += float(intangible)
+                                    goodwill_found = True
+                            
+                            if "goodwillAndIntangibleAssets" in balance_sheet.columns.tolist():
+                                goodwill_intangible = balance_sheet["goodwillAndIntangibleAssets"].iloc[i]
+                                if goodwill_intangible and goodwill_intangible != 'None':
+                                    goodwill_total = float(goodwill_intangible)
+                                    goodwill_found = True
+                            
+                            if goodwill_found:
+                                value = goodwill_total
+                                found = True
+                    except Exception as e:
+                        print(f"Error processing {item}: {str(e)}")
+                
+                elif item == "return_on_invested_capital":
+                    try:
+                        # ROIC = NOPAT / Invested Capital (简化计算)
+                        if ("operatingIncome" in income_stmt.columns.tolist() and 
+                            "totalAssets" in balance_sheet.columns.tolist() and 
+                            i < len(income_stmt) and i < len(balance_sheet)):
+                            operating_income = float(income_stmt["operatingIncome"].iloc[i])
+                            total_assets = float(balance_sheet["totalAssets"].iloc[i])
+                            if total_assets != 0:
+                                # 简化的ROIC计算
+                                value = operating_income / total_assets
+                                found = True
                     except Exception as e:
                         print(f"Error processing {item}: {str(e)}")
             
