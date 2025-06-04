@@ -51,8 +51,16 @@ def risk_management_agent(state: AgentState):
     for ticker in all_tickers:
         progress.update_status("risk_management_agent", ticker, "Fetching price data")
         
+<<<<<<< HEAD
         # 获取最新可用的价格数据
         prices, price_date = get_latest_available_price(ticker, data["end_date"])
+=======
+        prices = get_prices(
+            ticker=ticker,
+            start_date=data["start_date"],
+            end_date=data["end_date"],
+        )
+>>>>>>> origin/main
 
         if not prices:
             progress.update_status("risk_management_agent", ticker, "Warning: No price data found")

@@ -1,14 +1,13 @@
 import { Accordion } from '@/components/ui/accordion';
 import { Button } from '@/components/ui/button';
-import { useFlowContext } from '@/contexts/flow-context';
 import { componentGroups } from '@/data/sidebar-components';
 import { useComponentGroups } from '@/hooks/use-component-groups';
 import { useResizable } from '@/hooks/use-resizable';
 import { cn } from '@/lib/utils';
 import { PanelLeft } from 'lucide-react';
 import { ReactNode } from 'react';
-import { ComponentGroupItem } from './component-group';
 import { SearchBox } from './search-box';
+import { SidebarItemGroup } from './sidebar-item-group';
 
 interface LeftSidebarProps {
   children?: ReactNode;
@@ -32,11 +31,6 @@ export function LeftSidebar({
     filteredGroups,
     handleAccordionChange 
   } = useComponentGroups(componentGroups);
-  const { addNodeFromComponent } = useFlowContext();
-
-  const handleComponentAdd = (componentName: string) => {
-    addNodeFromComponent(componentName);
-  };
 
   return (
     <div 
@@ -79,11 +73,10 @@ export function LeftSidebar({
           onValueChange={handleAccordionChange}
         >
           {filteredGroups.map(group => (
-            <ComponentGroupItem
+            <SidebarItemGroup
               key={group.name} 
               group={group}
               activeItem={activeItem}
-              onComponentAdd={handleComponentAdd}
             />
           ))}
         </Accordion>

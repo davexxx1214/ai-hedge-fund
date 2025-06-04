@@ -46,7 +46,7 @@ export function formatTextIntoParagraphs(text: string): string[] {
 /**
  * Checks if a string is valid JSON format
  * @param text The text to check
- * @returns true if the text is valid JSON, false otherwise
+ * @returns true if the text is valid JSON or valid JS object, false otherwise
  */
 export function isJsonString(text: string): boolean {
   if (!text) return false;
@@ -76,10 +76,24 @@ export function isJsonString(text: string): boolean {
   }
   
   try {
+    // First try standard JSON parsing
     JSON.parse(trimmedText);
     return true;
   } catch (e) {
-    return false;
+    // If standard JSON parsing fails, try to handle JavaScript-like objects with NaN/undefined/Infinity
+    try {
+      // Replace JavaScript-specific values with JSON-compatible ones for validation
+      const normalizedText = trimmedText
+        .replace(/\bNaN\b/g, 'null')
+        .replace(/\bundefined\b/g, 'null')
+        .replace(/\bInfinity\b/g, 'null')
+        .replace(/\b-Infinity\b/g, 'null');
+      
+      JSON.parse(normalizedText);
+      return true;
+    } catch (e2) {
+      return false;
+    }
   }
 }
 
@@ -98,13 +112,60 @@ export function formatContent(content: string): {
   
   if (isJsonString(content)) {
     try {
-      // Format the JSON with indentation
+      // First try standard JSON parsing
       const parsedJson = JSON.parse(content);
       const formattedJson = JSON.stringify(parsedJson, null, 2);
       return { isJson: true, formattedContent: formattedJson };
     } catch (e) {
-      // If JSON parsing fails, fall back to text formatting
-      return { isJson: false, formattedContent: formatTextIntoParagraphs(content) };
+      // If standard JSON parsing fails, try to handle JavaScript-like objects with NaN/undefined/Infinity
+      try {
+        // Track the positions of special values before replacement
+        const specialValues: Array<{value: string, regex: RegExp}> = [
+          {value: 'NaN', regex: /\bNaN\b/g},
+          {value: 'undefined', regex: /\bundefined\b/g},
+          {value: 'Infinity', regex: /\bInfinity\b/g},
+          {value: '-Infinity', regex: /\b-Infinity\b/g}
+        ];
+        
+        // Replace JavaScript-specific values with JSON-compatible ones for parsing
+        let normalizedContent = content;
+        specialValues.forEach(({regex}) => {
+          normalizedContent = normalizedContent.replace(regex, 'null');
+        });
+        
+        const parsedJson = JSON.parse(normalizedContent);
+        let formattedJson = JSON.stringify(parsedJson, null, 2);
+        
+        // Now restore the special values by parsing the original content structure
+        // This is a more precise approach than the previous heuristic
+        const originalMatches: Array<{value: string, positions: number[]}> = [];
+        
+        specialValues.forEach(({value, regex}) => {
+          const matches = [...content.matchAll(regex)];
+          if (matches.length > 0) {
+            originalMatches.push({
+              value,
+              positions: matches.map(m => m.index!).sort((a, b) => b - a) // reverse order for replacement
+            });
+          }
+        });
+        
+        // Replace nulls back to original special values in reverse order to maintain positions
+        originalMatches.forEach(({value, positions}) => {
+          positions.forEach(() => {
+            // Find the next occurrence of null in the formatted JSON and replace it
+            const nullIndex = formattedJson.indexOf('null');
+            if (nullIndex !== -1) {
+              formattedJson = formattedJson.substring(0, nullIndex) + value + formattedJson.substring(nullIndex + 4);
+            }
+          });
+        });
+        
+        return { isJson: true, formattedContent: formattedJson };
+      } catch (e2) {
+        // If both attempts fail, fall back to text formatting
+        return { isJson: false, formattedContent: formatTextIntoParagraphs(content) };
+      }
     }
   }
   
@@ -148,7 +209,7 @@ export function createHighlightedJson(jsonString: string): string {
             return `<span style="color: #c586c0">${match}</span>`;
           } else {
             // Numbers are light blue/teal
-            return `<span style="color: #4ec9b0">${match}</span>`;
+            return `<span class="text-blue-500">${match}</span>`;
           }
         }
       );
