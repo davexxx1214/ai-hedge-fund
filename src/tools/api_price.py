@@ -8,7 +8,7 @@ import holidays
 
 from src.tools.api_base import ts, check_rate_limit
 from src.tools.api_cache import save_to_file_cache, load_from_file_cache
-from src.tools.trading_utils import get_network_time, is_market_trading_hours, calculate_business_days
+from src.tools.trading_utils import get_network_time, is_market_trading_hours, calculate_business_days, should_use_previous_trading_day
 from src.data.db_cache import get_db_cache
 from src.data.database_core import get_db
 from src.data.cache import get_cache
@@ -42,9 +42,33 @@ def get_prices(ticker: str, start_date: str, end_date: str = None) -> list:
         
         # 检查数据是否完整（是否包含最新日期的数据）
         if end_date:
-            latest_date = end_date
+            # 检查是否是当前日期，如果是且非交易时间，调整期望日期
+            current_date_str = datetime.now().strftime('%Y-%m-%d')
+            if end_date == current_date_str:
+                # 当前日期被指定为end_date，需要根据交易时间判断
+                use_previous, target_date = should_use_previous_trading_day()
+                if use_previous:
+                    # 如果当前不是交易时间，期望的最新日期是上一个交易日
+                    latest_date = target_date.strftime('%Y-%m-%d')
+                    print(f"指定了当前日期但非交易时间，期望的最新日期调整为上一个交易日: {latest_date}")
+                else:
+                    # 如果当前是交易时间，期望的最新日期是当前日期
+                    latest_date = end_date
+                    print(f"指定了当前日期且是交易时间，期望的最新日期为: {latest_date}")
+            else:
+                # 指定了其他日期，直接使用
+                latest_date = end_date
         else:
-            latest_date = datetime.now().strftime('%Y-%m-%d')
+            # 如果未指定 end_date，需要根据交易时间确定期望的最新日期
+            use_previous, target_date = should_use_previous_trading_day()
+            if use_previous:
+                # 如果当前不是交易时间，期望的最新日期是上一个交易日
+                latest_date = target_date.strftime('%Y-%m-%d')
+                print(f"当前非交易时间，期望的最新日期为上一个交易日: {latest_date}")
+            else:
+                # 如果当前是交易时间，期望的最新日期是当前日期
+                latest_date = datetime.now().strftime('%Y-%m-%d')
+                print(f"当前是交易时间，期望的最新日期为当前日期: {latest_date}")
         
         # 获取数据库中最新的日期
         db_latest_date = max(item['time'] for item in db_data) if db_data else None

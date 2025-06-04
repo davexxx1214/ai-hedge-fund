@@ -122,21 +122,30 @@ def should_use_previous_trading_day():
     current_datetime = utc_time.astimezone(eastern)
     current_date = current_datetime.date()
     
-    # 如果是交易时间，使用上一个交易日的数据
+    print(f"DEBUG: should_use_previous_trading_day() 被调用，当前时间: {current_datetime}")
+    
+    # 如果是交易时间，使用当前日期的数据
     if is_market_trading_hours(current_datetime):
-        return True, get_previous_trading_day(current_date)
+        print(f"DEBUG: 当前是交易时间，使用当前日期: {current_date}")
+        return False, current_date
     
     # 如果是周末，使用上一个交易日的数据
     if current_date.weekday() >= 5:
-        return True, get_previous_trading_day(current_date)
+        prev_day = get_previous_trading_day(current_date)
+        print(f"DEBUG: 当前是周末，使用上一个交易日: {prev_day}")
+        return True, prev_day
     
     # 如果是节假日，使用上一个交易日的数据
     try:
         us_holidays = holidays.NYSE(years=current_date.year)
         if current_date in us_holidays:
-            return True, get_previous_trading_day(current_date)
+            prev_day = get_previous_trading_day(current_date)
+            print(f"DEBUG: 当前是节假日，使用上一个交易日: {prev_day}")
+            return True, prev_day
     except Exception as e:
         print(f"检查节假日时出错: {e}")
     
-    # 其他情况使用当前日期
-    return False, current_date 
+    # 如果是工作日但不是交易时间（盘前盘后），使用上一个交易日的数据
+    prev_day = get_previous_trading_day(current_date)
+    print(f"DEBUG: 当前是工作日非交易时间，使用上一个交易日: {prev_day}")
+    return True, prev_day 

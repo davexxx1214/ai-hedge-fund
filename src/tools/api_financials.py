@@ -127,10 +127,19 @@ def _fetch_and_save_financial_data(ticker: str, db_cache, cache_params) -> list:
 
 def _get_overview_from_cache_or_api(ticker: str) -> pd.DataFrame:
     """优先从缓存获取公司概览数据，如果缓存不存在则调用API"""
-    # 检查是否有当前日期的公司概览缓存
-    if check_current_date_cache_exists('company_overview', ticker):
+    # 检查是否有当前日期的公司概览缓存（使用交易日逻辑）
+    if check_current_date_cache_exists('company_overview', ticker, use_trading_day_logic=True):
         print(f"从缓存获取 {ticker} 的公司概览数据")
-        cached_overview = load_from_file_cache('company_overview', ticker)
+        
+        # 确定要加载的缓存文件日期
+        from src.tools.trading_utils import should_use_previous_trading_day
+        use_previous, target_date = should_use_previous_trading_day()
+        if use_previous:
+            cache_params = {'query_date': target_date.strftime('%Y-%m-%d')}
+        else:
+            cache_params = None
+        
+        cached_overview = load_from_file_cache('company_overview', ticker, cache_params)
         if cached_overview is not None:
             # 如果缓存数据是字典格式，转换为DataFrame
             if isinstance(cached_overview, list) and len(cached_overview) > 0:

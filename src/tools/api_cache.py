@@ -24,21 +24,46 @@ def get_cache_path(cache_type, ticker, params=None):
     
     return CACHE_DIR / cache_type / filename
 
-def check_current_date_cache_exists(cache_type, ticker):
-    """检查当前日期的缓存文件是否存在"""
-    today_str = datetime.now().strftime('%Y%m%d')
+def check_current_date_cache_exists(cache_type, ticker, use_trading_day_logic=False):
+    """检查当前日期的缓存文件是否存在
+    
+    Args:
+        cache_type: 缓存类型
+        ticker: 股票代码
+        use_trading_day_logic: 是否使用交易日逻辑，如果为True且当前不是交易时间，则检查上一个交易日的缓存
+    """
+    if use_trading_day_logic:
+        # 使用交易日逻辑
+        from src.tools.trading_utils import should_use_previous_trading_day
+        use_previous, target_date = should_use_previous_trading_day()
+        if use_previous:
+            date_str = target_date.strftime('%Y%m%d')
+            print(f"DEBUG: 检查缓存 - 使用上一个交易日 {target_date} 的缓存文件")
+        else:
+            date_str = datetime.now().strftime('%Y%m%d')
+            print(f"DEBUG: 检查缓存 - 使用当前日期 {datetime.now().date()} 的缓存文件")
+    else:
+        # 使用当前日期
+        date_str = datetime.now().strftime('%Y%m%d')
+        print(f"DEBUG: 检查缓存 - 未使用交易日逻辑，使用当前日期 {datetime.now().date()}")
+    
     cache_dir = CACHE_DIR / cache_type
     cache_dir.mkdir(parents=True, exist_ok=True)
     
     if cache_type == 'earnings':
-        cache_file = cache_dir / f"{ticker}_EARNINGS_{today_str}.json"
+        cache_file = cache_dir / f"{ticker}_EARNINGS_{date_str}.json"
     else:
-        cache_file = cache_dir / f"{ticker}_{today_str}.json"
+        cache_file = cache_dir / f"{ticker}_{date_str}.json"
     
-    return cache_file.exists()
+    exists = cache_file.exists()
+    print(f"DEBUG: 缓存文件 {cache_file} 存在: {exists}")
+    return exists
 
 def check_financial_cache_exists(ticker):
-    """检查财务相关的所有缓存是否都存在，包括公司概览数据"""
+    """检查财务相关的所有缓存是否都存在，包括公司概览数据
+    
+    使用交易日逻辑：如果当前不是交易时间，检查上一个交易日的缓存
+    """
     financial_cache_types = [
         'income_statement_annual',
         'income_statement_quarterly', 
@@ -50,7 +75,7 @@ def check_financial_cache_exists(ticker):
     ]
     
     for cache_type in financial_cache_types:
-        if not check_current_date_cache_exists(cache_type, ticker):
+        if not check_current_date_cache_exists(cache_type, ticker, use_trading_day_logic=True):
             return False
     
     return True
