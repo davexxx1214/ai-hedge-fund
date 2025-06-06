@@ -124,8 +124,7 @@ def charlie_munger_agent(state: AgentState):
         munger_output = generate_munger_output(
             ticker=ticker, 
             analysis_data=analysis_data,
-            model_name=state["metadata"]["model_name"],
-            model_provider=state["metadata"]["model_provider"],
+            state=state,
         )
         
         munger_analysis[ticker] = {
@@ -664,8 +663,7 @@ def analyze_news_sentiment(news_items: list) -> str:
 def generate_munger_output(
     ticker: str,
     analysis_data: dict[str, any],
-    model_name: str,
-    model_provider: str,
+    state: AgentState,
 ) -> CharlieMungerSignal:
     """
     Generates investment decisions in the style of Charlie Munger.
@@ -737,9 +735,8 @@ def generate_munger_output(
         )
 
     return call_llm(
-        prompt=prompt, 
-        model_name=model_name, 
-        model_provider=model_provider, 
+        prompt=prompt,
+        state=state,
         pydantic_model=CharlieMungerSignal, 
         agent_name="charlie_munger_agent", 
         default_factory=create_default_charlie_munger_signal,

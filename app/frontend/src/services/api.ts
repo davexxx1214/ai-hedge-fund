@@ -1,13 +1,20 @@
 import { NodeStatus, OutputNodeData, useNodeContext } from '@/contexts/node-context';
 import { ModelProvider } from '@/services/types';
 
+interface AgentModelConfig {
+  agent_id: string;
+  model_name?: string;
+  model_provider?: ModelProvider;
+}
+
 interface HedgeFundRequest {
   tickers: string[];
   selected_agents: string[];
+  agent_models?: AgentModelConfig[];
   end_date?: string;
   start_date?: string;
-  model_name?: string;
-  model_provider?: ModelProvider;
+  model_name?: string; // Keep for backwards compatibility, will be removed later
+  model_provider?: ModelProvider; // Keep for backwards compatibility, will be removed later
   initial_cash?: number;
   margin_requirement?: number;
 }
