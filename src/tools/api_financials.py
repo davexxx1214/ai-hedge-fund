@@ -536,13 +536,28 @@ def search_line_items(ticker: str, line_items: list, end_date: str = None, perio
     函数从年报数据中抽取所需的项目（如自由现金流、净利润、收入、经营利润率等），
     返回包含属性访问的 FinancialData 对象列表。
     """
-    # 获取数据库缓存实例
     db_cache = get_db_cache()
     db = get_db()
-    
-    # 构建缓存参数
     cache_params = {'end': end_date, 'period': period, 'items': '_'.join(line_items)}
-    
+
+    # TTM 特殊处理
+    if period == "ttm":
+        # 直接读取 quarterly 数据
+        check_rate_limit()
+        income_stmt_q, _ = fd.get_income_statement_quarterly(symbol=ticker)
+        check_rate_limit()
+        balance_sheet_q, _ = fd.get_balance_sheet_quarterly(symbol=ticker)
+        check_rate_limit()
+        cash_flow_q, _ = fd.get_cash_flow_quarterly(symbol=ticker)
+        overview = _get_overview_from_cache_or_api(ticker)
+
+        # 只保留最近 4*limit 个季度
+        income_stmt_q = income_stmt_q.head(4*limit) if isinstance(income_stmt_q, pd.DataFrame) else pd.DataFrame()
+        balance_sheet_q = balance_sheet_q.head(4*limit) if isinstance(balance_sheet_q, pd.DataFrame) else pd.DataFrame()
+        cash_flow_q = cash_flow_q.head(4*limit) if isinstance(cash_flow_q, pd.DataFrame) else pd.DataFrame()
+
+        return _calculate_ttm_line_items(ticker, line_items, limit, income_stmt_q, balance_sheet_q, cash_flow_q, overview)
+
     # 检查当前日期的财务缓存是否存在
     if check_financial_cache_exists(ticker):
         print(f"发现 {ticker} 的当前日期财务缓存，从数据库获取line items数据")
@@ -1023,6 +1038,115 @@ def _calculate_line_items(ticker: str, line_items: list, limit: int, income_stmt
         
         results.append(MetricsWrapper(data))
     
+    return results
+
+def _calculate_ttm_line_items(ticker: str, line_items: list, limit: int, income_stmt_q: pd.DataFrame, balance_sheet_q: pd.DataFrame, cash_flow_q: pd.DataFrame, overview: pd.DataFrame) -> list:
+    """合成 TTM（最近12个月）财报项目"""
+    results = []
+    FIELD_MAPPING_LOCAL = FIELD_MAPPING.copy()
+    for ttm_idx in range(limit):
+        data = {}
+        # 取第 ttm_idx*4 到 ttm_idx*4+4 个季度
+        start = ttm_idx * 4
+        end = start + 4
+        ttm_income = income_stmt_q.iloc[start:end] if len(income_stmt_q) >= end else income_stmt_q.iloc[start:]
+        ttm_cash = cash_flow_q.iloc[start:end] if len(cash_flow_q) >= end else cash_flow_q.iloc[start:]
+        # 资产负债表类用最新一期
+        ttm_balance = balance_sheet_q.iloc[start] if len(balance_sheet_q) > start else None
+        # 取最新一期的报告期
+        if len(ttm_income) > 0 and "fiscalDateEnding" in ttm_income.columns:
+            data["report_period"] = ttm_income["fiscalDateEnding"].iloc[0]
+        elif ttm_balance is not None and "fiscalDateEnding" in ttm_balance:
+            data["report_period"] = ttm_balance["fiscalDateEnding"]
+        else:
+            data["report_period"] = datetime.now().strftime('%Y-%m-%d')
+        for item in line_items:
+            mapped_item = FIELD_MAPPING_LOCAL.get(item, item)
+            value = None
+            found = False
+            # 利润表/现金流量表累计类
+            if item in ["net_income", "revenue", "total_revenue", "gross_profit", "capital_expenditure", "depreciation_and_amortization", "free_cash_flow"]:
+                # 现金流量表和利润表累计
+                if mapped_item in ttm_income.columns:
+                    try:
+                        value = ttm_income[mapped_item].astype(float).sum()
+                        found = True
+                    except Exception:
+                        pass
+                elif mapped_item in ttm_cash.columns:
+                    try:
+                        value = ttm_cash[mapped_item].astype(float).sum()
+                        found = True
+                    except Exception:
+                        pass
+                # 特殊项 free_cash_flow
+                if item == "free_cash_flow":
+                    try:
+                        if "operatingCashflow" in ttm_cash.columns and "capitalExpenditures" in ttm_cash.columns:
+                            op = ttm_cash["operatingCashflow"].astype(float).sum()
+                            capex = ttm_cash["capitalExpenditures"].astype(float).sum()
+                            value = op - capex
+                            found = True
+                    except Exception:
+                        pass
+            # 资产负债表类（最新值）
+            elif item in ["total_assets", "total_liabilities", "shareholders_equity", "outstanding_shares", "current_assets", "current_liabilities"]:
+                if ttm_balance is not None and mapped_item in ttm_balance:
+                    try:
+                        value = float(ttm_balance[mapped_item])
+                        found = True
+                    except Exception:
+                        pass
+            # 分红累计
+            elif item == "dividends_and_other_cash_distributions":
+                try:
+                    if "dividendPayout" in ttm_cash.columns:
+                        v = ttm_cash["dividendPayout"].astype(float).sum()
+                        value = v
+                        found = True
+                except Exception:
+                    pass
+            # 股权发行/回购净额 TTM
+            elif item == "issuance_or_purchase_of_equity_shares":
+                try:
+                    equity_issuance = 0
+                    equity_repurchase = 0
+                    found_any = False
+                    # 发行
+                    if "proceedsFromIssuanceOfCommonStock" in ttm_cash.columns:
+                        vals = ttm_cash["proceedsFromIssuanceOfCommonStock"].apply(lambda x: float(x) if x not in [None, '', 'None'] else 0)
+                        equity_issuance += vals.sum()
+                        found_any = True
+                    if "proceedsFromIssuanceOfPreferredStock" in ttm_cash.columns:
+                        vals = ttm_cash["proceedsFromIssuanceOfPreferredStock"].apply(lambda x: float(x) if x not in [None, '', 'None'] else 0)
+                        equity_issuance += vals.sum()
+                        found_any = True
+                    # 回购
+                    if "paymentsForRepurchaseOfCommonStock" in ttm_cash.columns:
+                        vals = ttm_cash["paymentsForRepurchaseOfCommonStock"].apply(lambda x: float(x) if x not in [None, '', 'None'] else 0)
+                        equity_repurchase += vals.sum()
+                        found_any = True
+                    if "paymentsForRepurchaseOfEquity" in ttm_cash.columns:
+                        vals = ttm_cash["paymentsForRepurchaseOfEquity"].apply(lambda x: float(x) if x not in [None, '', 'None'] else 0)
+                        equity_repurchase += vals.sum()
+                        found_any = True
+                    if "paymentsForRepurchaseOfPreferredStock" in ttm_cash.columns:
+                        vals = ttm_cash["paymentsForRepurchaseOfPreferredStock"].apply(lambda x: float(x) if x not in [None, '', 'None'] else 0)
+                        equity_repurchase += vals.sum()
+                        found_any = True
+                    value = equity_issuance - equity_repurchase
+                    if found_any:
+                        found = True
+                except Exception:
+                    pass
+            # 其它特殊项
+            # ... 可根据需要扩展 ...
+            if found:
+                data[item] = value
+            else:
+                print(f"Warning: 无法找到 {ticker} 的 {item} (TTM) 数据")
+                data[item] = None
+        results.append(MetricsWrapper(data))
     return results
 
 def check_and_update_financials(ticker: str):
