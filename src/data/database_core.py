@@ -4,6 +4,7 @@ from pathlib import Path
 from datetime import datetime
 import json
 import pandas as pd # Keep pandas import for potential future use or if needed by mixins indirectly
+import os
 
 # Import Mixin classes (will be created in subsequent steps)
 from .database_tables import DatabaseTablesMixin
@@ -18,7 +19,7 @@ from .database_utils_mixin import DatabaseUtilsMixin
 _thread_local = threading.local()
 
 # 数据库文件路径 (Centralized definition)
-DB_PATH = Path("src/data/finance.db")
+DB_PATH = Path(os.path.abspath(os.path.join(os.path.dirname(__file__), '../data/finance.db')))
 
 class Database(
     DatabaseTablesMixin,

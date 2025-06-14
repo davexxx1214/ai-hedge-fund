@@ -5,9 +5,10 @@ import json
 import time
 from datetime import datetime
 from pathlib import Path
+import os
 
 # 创建本地文件缓存目录
-CACHE_DIR = Path("src/data/cache_files")
+CACHE_DIR = Path(os.path.abspath(os.path.join(os.path.dirname(__file__), '../data/cache_files')))
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 def get_cache_path(cache_type, ticker, params=None):
