@@ -441,11 +441,23 @@ def analyze_predictability(financial_line_items: list) -> dict:
                if hasattr(item, 'revenue') and item.revenue is not None]
     
     if revenues and len(revenues) >= 5:
-        # Calculate year-over-year growth rates
-        growth_rates = [(revenues[i] / revenues[i+1] - 1) for i in range(len(revenues)-1)]
-        
-        avg_growth = sum(growth_rates) / len(growth_rates)
-        growth_volatility = sum(abs(r - avg_growth) for r in growth_rates) / len(growth_rates)
+        # Calculate year-over-year growth rates，分母为0或None时返回None
+        growth_rates = []
+        for i in range(len(revenues) - 1):
+            prev = revenues[i+1]
+            curr = revenues[i]
+            if prev is None or prev == 0:
+                growth_rates.append(None)
+            else:
+                growth_rates.append(curr / prev - 1)
+        # 过滤掉None
+        valid_growth_rates = [r for r in growth_rates if r is not None]
+        if valid_growth_rates:
+            avg_growth = sum(valid_growth_rates) / len(valid_growth_rates)
+            growth_volatility = sum(abs(r - avg_growth) for r in valid_growth_rates) / len(valid_growth_rates)
+        else:
+            avg_growth = 0
+            growth_volatility = 0
         
         if avg_growth > 0.05 and growth_volatility < 0.1:
             # Steady, consistent growth (Munger loves this)

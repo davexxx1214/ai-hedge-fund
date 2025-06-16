@@ -95,20 +95,20 @@ def calculate_growth(df, column_name):
     """计算增长率, 用于收入、净利润、股东权益等数据"""
     try:
         if column_name not in df.columns.tolist() or len(df) < 2:
-            return 0
+            return None
         current_series = df[column_name].iloc[0]
         previous_series = df[column_name].iloc[1]
         
         if pd.isna(current_series) or pd.isna(previous_series):
-            return 0
+            return None
             
         current = float(current_series)
         previous = float(previous_series)
         
         if previous == 0:
-            return 0
+            return None
             
         return (current - previous) / previous
     except Exception as e:
         print(f"Error calculating growth for {column_name}: {str(e)}")
-        return 0
+        return None
