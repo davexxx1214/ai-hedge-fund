@@ -168,6 +168,7 @@ def generate_trading_decision(
                   ...
                 }}
               }}
+              Strictly output only the JSON, with no extra text or explanation.
               """,
             ),
         ]

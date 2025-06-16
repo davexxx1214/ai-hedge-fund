@@ -656,14 +656,26 @@ def analyze_book_value_growth(financial_line_items: list) -> dict[str, any]:
             oldest_bv = book_values[-1]
             latest_bv = book_values[0]
             years = len(book_values) - 1
-            if oldest_bv > 0:
-                cagr = ((latest_bv / oldest_bv) ** (1/years)) - 1
-                if cagr > 0.15:  # 15%+ CAGR
-                    score += 2
-                    reasoning.append(f"Excellent book value CAGR: {cagr:.1%}")
-                elif cagr > 0.1:  # 10%+ CAGR
-                    score += 1
-                    reasoning.append(f"Good book value CAGR: {cagr:.1%}")
+            if oldest_bv > 0 and latest_bv > 0:
+                try:
+                    cagr_raw = latest_bv / oldest_bv
+                    if cagr_raw > 0:
+                        cagr = (cagr_raw ** (1/years)) - 1
+                        if isinstance(cagr, float) and not isinstance(cagr, complex):
+                            if cagr > 0.15:  # 15%+ CAGR
+                                score += 2
+                                reasoning.append(f"Excellent book value CAGR: {cagr:.1%}")
+                            elif cagr > 0.1:  # 10%+ CAGR
+                                score += 1
+                                reasoning.append(f"Good book value CAGR: {cagr:.1%}")
+                        else:
+                            reasoning.append("CAGR结果为复数，数据异常")
+                    else:
+                        reasoning.append("Book value比值为负，无法计算CAGR")
+                except Exception as e:
+                    reasoning.append(f"CAGR计算异常: {e}")
+            else:
+                reasoning.append("Book value为负或为零，无法计算CAGR")
     else:
         reasoning.append("Insufficient book value data for growth analysis")
     
