@@ -24,116 +24,146 @@ def warren_buffett_agent(state: AgentState):
     # Collect all analysis for LLM reasoning
     analysis_data = {}
     buffett_analysis = {}
+    
+    print("Warren Buffett Agent开始分析...")
 
     for ticker in tickers:
-        progress.update_status("warren_buffett_agent", ticker, "Fetching financial metrics")
-        # Fetch required data - request more periods for better trend analysis
-        metrics = get_financial_metrics(ticker, end_date, period="ttm", limit=10)
+        try:
+            progress.update_status("warren_buffett_agent", ticker, "Fetching financial metrics")
+            # Fetch required data - request more periods for better trend analysis
+            try:
+                metrics = get_financial_metrics(ticker, end_date, period="ttm", limit=10)
+            except Exception as e:
+                print(f"警告：获取 {ticker} 的财务指标失败：{str(e)}")
+                metrics = []
 
-        progress.update_status("warren_buffett_agent", ticker, "Gathering financial line items")
-        financial_line_items = search_line_items(
-            ticker,
-            [
-                "capital_expenditure",
-                "depreciation_and_amortization",
-                "net_income",
-                "outstanding_shares",
-                "total_assets",
-                "total_liabilities",
-                "shareholders_equity",
-                "dividends_and_other_cash_distributions",
-                "issuance_or_purchase_of_equity_shares",
-                "gross_profit",
-                "revenue",
-                "free_cash_flow",
-            ],
-            end_date,
-            period="ttm",
-            limit=10,
-        )
+            progress.update_status("warren_buffett_agent", ticker, "Gathering financial line items")
+            try:
+                financial_line_items = search_line_items(
+                    ticker,
+                    [
+                        "capital_expenditure",
+                        "depreciation_and_amortization",
+                        "net_income",
+                        "outstanding_shares",
+                        "total_assets",
+                        "total_liabilities",
+                        "shareholders_equity",
+                        "dividends_and_other_cash_distributions",
+                        "issuance_or_purchase_of_equity_shares",
+                        "gross_profit",
+                        "revenue",
+                        "free_cash_flow",
+                    ],
+                    end_date,
+                    period="ttm",
+                    limit=10,
+                )
+            except Exception as e:
+                print(f"警告：获取 {ticker} 的财务数据项失败：{str(e)}")
+                financial_line_items = []
 
-        progress.update_status("warren_buffett_agent", ticker, "Getting market cap")
-        # Get current market cap
-        market_cap = get_market_cap(ticker, end_date)
+            progress.update_status("warren_buffett_agent", ticker, "Getting market cap")
+            try:
+                # Get current market cap
+                market_cap = get_market_cap(ticker, end_date)
+            except Exception as e:
+                print(f"警告：获取 {ticker} 的市值数据失败：{str(e)}")
+                market_cap = None
 
-        progress.update_status("warren_buffett_agent", ticker, "Analyzing fundamentals")
-        # Analyze fundamentals
-        fundamental_analysis = analyze_fundamentals(metrics)
+            progress.update_status("warren_buffett_agent", ticker, "Analyzing fundamentals")
+            # Analyze fundamentals with error handling
+            fundamental_analysis = analyze_fundamentals(metrics)
 
-        progress.update_status("warren_buffett_agent", ticker, "Analyzing consistency")
-        consistency_analysis = analyze_consistency(financial_line_items)
+            progress.update_status("warren_buffett_agent", ticker, "Analyzing consistency")
+            consistency_analysis = analyze_consistency(financial_line_items)
 
-        progress.update_status("warren_buffett_agent", ticker, "Analyzing competitive moat")
-        moat_analysis = analyze_moat(metrics)
+            progress.update_status("warren_buffett_agent", ticker, "Analyzing competitive moat")
+            moat_analysis = analyze_moat(metrics)
 
-        progress.update_status("warren_buffett_agent", ticker, "Analyzing pricing power")
-        pricing_power_analysis = analyze_pricing_power(financial_line_items, metrics)
+            progress.update_status("warren_buffett_agent", ticker, "Analyzing pricing power")
+            pricing_power_analysis = analyze_pricing_power(financial_line_items, metrics)
 
-        progress.update_status("warren_buffett_agent", ticker, "Analyzing book value growth")
-        book_value_analysis = analyze_book_value_growth(financial_line_items)
+            progress.update_status("warren_buffett_agent", ticker, "Analyzing book value growth")
+            book_value_analysis = analyze_book_value_growth(financial_line_items)
 
-        progress.update_status("warren_buffett_agent", ticker, "Analyzing management quality")
-        mgmt_analysis = analyze_management_quality(financial_line_items)
+            progress.update_status("warren_buffett_agent", ticker, "Analyzing management quality")
+            mgmt_analysis = analyze_management_quality(financial_line_items)
 
-        progress.update_status("warren_buffett_agent", ticker, "Calculating intrinsic value")
-        intrinsic_value_analysis = calculate_intrinsic_value(financial_line_items)
+            progress.update_status("warren_buffett_agent", ticker, "Calculating intrinsic value")
+            intrinsic_value_analysis = calculate_intrinsic_value(financial_line_items)
 
-        # Calculate total score without circle of competence (LLM will handle that)
-        total_score = (
-            fundamental_analysis["score"] + 
-            consistency_analysis["score"] + 
-            moat_analysis["score"] + 
-            mgmt_analysis["score"] +
-            pricing_power_analysis["score"] + 
-            book_value_analysis["score"]
-        )
-        
-        # Update max possible score calculation
-        max_possible_score = (
-            10 +  # fundamental_analysis (ROE, debt, margins, current ratio)
-            moat_analysis["max_score"] + 
-            mgmt_analysis["max_score"] +
-            5 +   # pricing_power (0-5)
-            5     # book_value_growth (0-5)
-        )
+            # Calculate total score without circle of competence (LLM will handle that)
+            total_score = (
+                fundamental_analysis["score"] + 
+                consistency_analysis["score"] + 
+                moat_analysis["score"] + 
+                mgmt_analysis["score"] +
+                pricing_power_analysis["score"] + 
+                book_value_analysis["score"]
+            )
+            
+            # Update max possible score calculation
+            max_possible_score = (
+                10 +  # fundamental_analysis (ROE, debt, margins, current ratio)
+                moat_analysis["max_score"] + 
+                mgmt_analysis["max_score"] +
+                5 +   # pricing_power (0-5)
+                5     # book_value_growth (0-5)
+            )
 
-        # Add margin of safety analysis if we have both intrinsic value and current price
-        margin_of_safety = None
-        intrinsic_value = intrinsic_value_analysis["intrinsic_value"]
-        if intrinsic_value and market_cap:
-            margin_of_safety = (intrinsic_value - market_cap) / market_cap
+            # Add margin of safety analysis if we have both intrinsic value and current price
+            margin_of_safety = None
+            intrinsic_value = intrinsic_value_analysis["intrinsic_value"]
+            if intrinsic_value and market_cap:
+                margin_of_safety = (intrinsic_value - market_cap) / market_cap
 
-        # Combine all analysis results for LLM evaluation
-        analysis_data[ticker] = {
-            "ticker": ticker,
-            "score": total_score,
-            "max_score": max_possible_score,
-            "fundamental_analysis": fundamental_analysis,
-            "consistency_analysis": consistency_analysis,
-            "moat_analysis": moat_analysis,
-            "pricing_power_analysis": pricing_power_analysis,
-            "book_value_analysis": book_value_analysis,
-            "management_analysis": mgmt_analysis,
-            "intrinsic_value_analysis": intrinsic_value_analysis,
-            "market_cap": market_cap,
-            "margin_of_safety": margin_of_safety,
-        }
+            # Combine all analysis results for LLM evaluation
+            analysis_data[ticker] = {
+                "ticker": ticker,
+                "score": total_score,
+                "max_score": max_possible_score,
+                "fundamental_analysis": fundamental_analysis,
+                "consistency_analysis": consistency_analysis,
+                "moat_analysis": moat_analysis,
+                "pricing_power_analysis": pricing_power_analysis,
+                "book_value_analysis": book_value_analysis,
+                "management_analysis": mgmt_analysis,
+                "intrinsic_value_analysis": intrinsic_value_analysis,
+                "market_cap": market_cap,
+                "margin_of_safety": margin_of_safety,
+                "data_quality": {
+                    "has_metrics": len(metrics) > 0,
+                    "has_financials": len(financial_line_items) > 0,
+                    "has_market_cap": market_cap is not None,
+                },
+            }
 
-        progress.update_status("warren_buffett_agent", ticker, "Generating Warren Buffett analysis")
-        buffett_output = generate_buffett_output(
-            ticker=ticker,
-            analysis_data=analysis_data,
-            state=state,
-        )
+            progress.update_status("warren_buffett_agent", ticker, "Generating Warren Buffett analysis")
+            buffett_output = generate_buffett_output(
+                ticker=ticker,
+                analysis_data=analysis_data,
+                state=state,
+            )
 
-        # Store analysis in consistent format with other agents
-        buffett_analysis[ticker] = {
-            "signal": buffett_output.signal,
-            "confidence": buffett_output.confidence,
-            "reasoning": buffett_output.reasoning,
-        }
+            # Store analysis in consistent format with other agents
+            buffett_analysis[ticker] = {
+                "signal": buffett_output.signal,
+                "confidence": buffett_output.confidence,
+                "reasoning": buffett_output.reasoning,
+            }
 
-        progress.update_status("warren_buffett_agent", ticker, "Done", analysis=buffett_output.reasoning)
+            progress.update_status("warren_buffett_agent", ticker, "Done", analysis=buffett_output.reasoning)
+
+        except Exception as e:
+            print(f"错误：处理 {ticker} 时发生异常：{str(e)}")
+            # 为这个股票提供一个保守的默认分析结果
+            buffett_analysis[ticker] = {
+                "signal": "neutral",
+                "confidence": 0.0,
+                "reasoning": f"由于技术原因无法完成分析：{str(e)}。为了谨慎起见，建议暂时保持中立。",
+            }
+            continue
 
     # Create the message
     message = HumanMessage(content=json.dumps(buffett_analysis), name="warren_buffett_agent")
@@ -153,7 +183,8 @@ def warren_buffett_agent(state: AgentState):
 def analyze_fundamentals(metrics: list) -> dict[str, any]:
     """Analyze company fundamentals based on Buffett's criteria."""
     if not metrics:
-        return {"score": 0, "details": "Insufficient fundamental data"}
+        print("警告：没有足够的基本面数据进行分析")
+        return {"score": 0, "details": "Insufficient fundamental data", "metrics": {}}
 
     latest_metrics = metrics[0]
 
@@ -202,7 +233,8 @@ def analyze_fundamentals(metrics: list) -> dict[str, any]:
 def analyze_consistency(financial_line_items: list) -> dict[str, any]:
     """Analyze earnings consistency and growth."""
     if len(financial_line_items) < 4:  # Need at least 4 periods for trend analysis
-        return {"score": 0, "details": "Insufficient historical data"}
+        print("警告：没有足够的历史数据进行一致性分析（需要至少4个周期）")
+        return {"score": 0, "details": "Insufficient historical data (need at least 4 periods)"}
 
     score = 0
     reasoning = []
@@ -243,7 +275,12 @@ def analyze_moat(metrics: list) -> dict[str, any]:
     5. Switching costs (inferred from customer retention)
     """
     if not metrics or len(metrics) < 5:  # Need more data for proper moat analysis
-        return {"score": 0, "max_score": 5, "details": "Insufficient data for comprehensive moat analysis"}
+        print("警告：没有足够的数据进行护城河分析（需要至少5个周期的数据）")
+        return {
+            "score": 0, 
+            "max_score": 5, 
+            "details": "Insufficient data for comprehensive moat analysis (need at least 5 periods)"
+        }
 
     reasoning = []
     moat_score = 0
