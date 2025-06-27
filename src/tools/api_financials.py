@@ -330,177 +330,188 @@ def _safe_get_cash_flow_quarterly(ticker: str, db_cache, cache_params) -> pd.Dat
 def _calculate_financial_metrics(ticker: str, income_stmt: pd.DataFrame, balance_sheet: pd.DataFrame, 
                                 cash_flow: pd.DataFrame, overview: pd.DataFrame) -> list:
     """计算财务指标"""
-    try:
-        operating_cash = 0
-        capex = 0
-        shares = 0
-        
-        if "operatingCashflow" in cash_flow.columns and len(cash_flow.index) > 0:
-            operating_cash = float(cash_flow["operatingCashflow"].iloc[0])
-        
-        if "capitalExpenditures" in cash_flow.columns and len(cash_flow.index) > 0:
-            capex = float(cash_flow["capitalExpenditures"].iloc[0])
-        
-        if "SharesOutstanding" in overview.columns and len(overview.index) > 0:
-            shares = float(overview["SharesOutstanding"].iloc[0])
-        
-        free_cash_flow = operating_cash - capex
-        free_cash_flow_per_share = free_cash_flow / shares if shares != 0 else 0
-        
-        # 计算股权发行与回购净额
-        issuance_or_purchase_of_equity_shares = 0
-        if len(cash_flow.index) > 0:
-            # 计算股权发行净额
-            equity_issuance = 0
-            if "proceedsFromIssuanceOfCommonStock" in cash_flow.columns:
-                common_stock_issuance = cash_flow["proceedsFromIssuanceOfCommonStock"].iloc[0]
-                if common_stock_issuance and common_stock_issuance != 'None':
-                    equity_issuance += float(common_stock_issuance)
-            if "proceedsFromIssuanceOfPreferredStock" in cash_flow.columns:
-                preferred_stock_issuance = cash_flow["proceedsFromIssuanceOfPreferredStock"].iloc[0]
-                if preferred_stock_issuance and preferred_stock_issuance != 'None':
-                    equity_issuance += float(preferred_stock_issuance)
-            
-            # 计算股权回购净额
-            equity_repurchase = 0
-            if "paymentsForRepurchaseOfCommonStock" in cash_flow.columns:
-                common_stock_repurchase = cash_flow["paymentsForRepurchaseOfCommonStock"].iloc[0]
-                if common_stock_repurchase and common_stock_repurchase != 'None':
-                    equity_repurchase += float(common_stock_repurchase)
-            if "paymentsForRepurchaseOfEquity" in cash_flow.columns:
-                equity_repurchase_general = cash_flow["paymentsForRepurchaseOfEquity"].iloc[0]
-                if equity_repurchase_general and equity_repurchase_general != 'None':
-                    equity_repurchase += float(equity_repurchase_general)
-            if "paymentsForRepurchaseOfPreferredStock" in cash_flow.columns:
-                preferred_stock_repurchase = cash_flow["paymentsForRepurchaseOfPreferredStock"].iloc[0]
-                if preferred_stock_repurchase and preferred_stock_repurchase != 'None':
-                    equity_repurchase += float(preferred_stock_repurchase)
-            
-            # 计算净额
-            issuance_or_purchase_of_equity_shares = equity_issuance - equity_repurchase
-    except Exception as e:
-        print(f"Error calculating equity issuance/repurchase: {str(e)}")
-        issuance_or_purchase_of_equity_shares = 0
+    metrics_list = []
     
-    # 获取财报日期
-    report_date = None
-    if "fiscalDateEnding" in income_stmt.columns and len(income_stmt.index) > 0:
-        report_date = income_stmt["fiscalDateEnding"].iloc[0]
+    # 确定需要计算的周期数，取所有数据源中的最小行数
+    num_periods = min(len(income_stmt), len(balance_sheet), len(cash_flow)) if len(income_stmt) > 0 and len(balance_sheet) > 0 and len(cash_flow) > 0 else 1
+    num_periods = min(num_periods, 10)  # 最多返回10个周期
     
-    # 计算财务指标 - 如果数据不存在，显示为None而不是0
-    def safe_get_float(df, column, default=None):
-        """安全获取数值，如果列不存在或为空则返回default"""
-        if column in df.columns and len(df.index) > 0:
-            value = df[column].iloc[0]
+    print(f"计算 {ticker} 的财务指标，共 {num_periods} 个周期")
+    
+    for period_idx in range(num_periods):
+        try:
+            operating_cash = 0
+            capex = 0
+            shares = 0
+            
+            if "operatingCashflow" in cash_flow.columns and len(cash_flow.index) > period_idx:
+                operating_cash = float(cash_flow["operatingCashflow"].iloc[period_idx])
+            
+            if "capitalExpenditures" in cash_flow.columns and len(cash_flow.index) > period_idx:
+                capex = float(cash_flow["capitalExpenditures"].iloc[period_idx])
+            
+            if "SharesOutstanding" in overview.columns and len(overview.index) > 0:
+                shares = float(overview["SharesOutstanding"].iloc[0])
+            
+            free_cash_flow = operating_cash - capex
+            free_cash_flow_per_share = free_cash_flow / shares if shares != 0 else 0
+            
+            # 计算股权发行与回购净额
+            issuance_or_purchase_of_equity_shares = 0
+            if len(cash_flow.index) > period_idx:
+                # 计算股权发行净额
+                equity_issuance = 0
+                if "proceedsFromIssuanceOfCommonStock" in cash_flow.columns:
+                    common_stock_issuance = cash_flow["proceedsFromIssuanceOfCommonStock"].iloc[period_idx]
+                    if common_stock_issuance and common_stock_issuance != 'None':
+                        equity_issuance += float(common_stock_issuance)
+                if "proceedsFromIssuanceOfPreferredStock" in cash_flow.columns:
+                    preferred_stock_issuance = cash_flow["proceedsFromIssuanceOfPreferredStock"].iloc[period_idx]
+                    if preferred_stock_issuance and preferred_stock_issuance != 'None':
+                        equity_issuance += float(preferred_stock_issuance)
+                
+                # 计算股权回购净额
+                equity_repurchase = 0
+                if "paymentsForRepurchaseOfCommonStock" in cash_flow.columns:
+                    common_stock_repurchase = cash_flow["paymentsForRepurchaseOfCommonStock"].iloc[period_idx]
+                    if common_stock_repurchase and common_stock_repurchase != 'None':
+                        equity_repurchase += float(common_stock_repurchase)
+                if "paymentsForRepurchaseOfEquity" in cash_flow.columns:
+                    equity_repurchase_general = cash_flow["paymentsForRepurchaseOfEquity"].iloc[period_idx]
+                    if equity_repurchase_general and equity_repurchase_general != 'None':
+                        equity_repurchase += float(equity_repurchase_general)
+                if "paymentsForRepurchaseOfPreferredStock" in cash_flow.columns:
+                    preferred_stock_repurchase = cash_flow["paymentsForRepurchaseOfPreferredStock"].iloc[period_idx]
+                    if preferred_stock_repurchase and preferred_stock_repurchase != 'None':
+                        equity_repurchase += float(preferred_stock_repurchase)
+                
+                # 计算净额
+                issuance_or_purchase_of_equity_shares = equity_issuance - equity_repurchase
+        except Exception as e:
+            print(f"Error calculating equity issuance/repurchase for period {period_idx}: {str(e)}")
+            issuance_or_purchase_of_equity_shares = 0
+        
+        # 获取财报日期
+        report_date = None
+        if "fiscalDateEnding" in income_stmt.columns and len(income_stmt.index) > period_idx:
+            report_date = income_stmt["fiscalDateEnding"].iloc[period_idx]
+    
+        # 计算财务指标 - 如果数据不存在，显示为None而不是0
+        def safe_get_float(df, column, row_idx, default=None):
+            """安全获取数值，如果列不存在或为空则返回default"""
+            if column in df.columns and len(df.index) > row_idx:
+                value = df[column].iloc[row_idx]
+                try:
+                    return float(value) if value is not None and str(value) != 'None' else default
+                except (ValueError, TypeError):
+                    return default
+            return default
+        
+        # 计算book_value_growth (从totalShareholderEquity计算)
+        book_value_growth = None
+        if "totalShareholderEquity" in balance_sheet.columns and len(balance_sheet.index) >= period_idx + 2:
             try:
-                return float(value) if value is not None and str(value) != 'None' else default
+                current_equity = float(balance_sheet["totalShareholderEquity"].iloc[period_idx])
+                previous_equity = float(balance_sheet["totalShareholderEquity"].iloc[period_idx + 1])
+                if previous_equity != 0:
+                    book_value_growth = (current_equity - previous_equity) / previous_equity
+            except (ValueError, TypeError, IndexError):
+                pass
+        
+        # 计算current_ratio (Current Assets / Current Liabilities)
+        current_ratio = None
+        if ("totalCurrentAssets" in balance_sheet.columns and 
+            "totalCurrentLiabilities" in balance_sheet.columns and len(balance_sheet.index) > period_idx):
+            try:
+                current_assets = float(balance_sheet["totalCurrentAssets"].iloc[period_idx])
+                current_liabilities = float(balance_sheet["totalCurrentLiabilities"].iloc[period_idx])
+                if current_liabilities != 0:
+                    current_ratio = current_assets / current_liabilities
             except (ValueError, TypeError):
-                return default
-        return default
-    
-    # 计算book_value_growth (从totalShareholderEquity计算)
-    book_value_growth = None
-    if "totalShareholderEquity" in balance_sheet.columns and len(balance_sheet.index) >= 2:
-        try:
-            current_equity = float(balance_sheet["totalShareholderEquity"].iloc[0])
-            previous_equity = float(balance_sheet["totalShareholderEquity"].iloc[1])
-            if previous_equity != 0:
-                book_value_growth = (current_equity - previous_equity) / previous_equity
-        except (ValueError, TypeError, IndexError):
-            pass
-    
-    # 计算current_ratio (Current Assets / Current Liabilities)
-    current_ratio = None
-    if ("totalCurrentAssets" in balance_sheet.columns and 
-        "totalCurrentLiabilities" in balance_sheet.columns and len(balance_sheet.index) > 0):
-        try:
-            current_assets = float(balance_sheet["totalCurrentAssets"].iloc[0])
-            current_liabilities = float(balance_sheet["totalCurrentLiabilities"].iloc[0])
-            if current_liabilities != 0:
-                current_ratio = current_assets / current_liabilities
-        except (ValueError, TypeError):
-            pass
-    
-    # 计算debt_to_equity (Total Debt / Total Equity)
-    debt_to_equity = None
-    if "totalShareholderEquity" in balance_sheet.columns and len(balance_sheet.index) > 0:
-        try:
-            total_equity = float(balance_sheet["totalShareholderEquity"].iloc[0])
-            # 计算总债务 = 短期债务 + 长期债务
-            total_debt = 0
-            if "shortTermDebt" in balance_sheet.columns:
-                short_debt = balance_sheet["shortTermDebt"].iloc[0]
-                if short_debt and short_debt != 'None':
-                    total_debt += float(short_debt)
-            if "longTermDebt" in balance_sheet.columns:
-                long_debt = balance_sheet["longTermDebt"].iloc[0]
-                if long_debt and long_debt != 'None':
-                    total_debt += float(long_debt)
-            
-            if total_equity != 0:
-                debt_to_equity = total_debt / total_equity
-        except (ValueError, TypeError):
-            pass
-    
-    # 计算enterprise_value (Market Cap + Total Debt - Cash)
-    enterprise_value = None
-    market_cap = safe_get_float(overview, "MarketCapitalization")
-    if market_cap and "totalShareholderEquity" in balance_sheet.columns and len(balance_sheet.index) > 0:
-        try:
-            # 计算总债务
-            total_debt = 0
-            if "shortTermDebt" in balance_sheet.columns:
-                short_debt = balance_sheet["shortTermDebt"].iloc[0]
-                if short_debt and short_debt != 'None':
-                    total_debt += float(short_debt)
-            if "longTermDebt" in balance_sheet.columns:
-                long_debt = balance_sheet["longTermDebt"].iloc[0]
-                if long_debt and long_debt != 'None':
-                    total_debt += float(long_debt)
-            
-            # 获取现金和现金等价物
-            cash = 0
-            if "cashAndCashEquivalentsAtCarryingValue" in balance_sheet.columns:
-                cash_value = balance_sheet["cashAndCashEquivalentsAtCarryingValue"].iloc[0]
-                if cash_value and cash_value != 'None':
-                    cash = float(cash_value)
-            elif "cashAndShortTermInvestments" in balance_sheet.columns:
-                cash_value = balance_sheet["cashAndShortTermInvestments"].iloc[0]
-                if cash_value and cash_value != 'None':
-                    cash = float(cash_value)
-            
-            enterprise_value = market_cap + total_debt - cash
-        except (ValueError, TypeError):
-            pass
+                pass
+        
+        # 计算debt_to_equity (Total Debt / Total Equity)
+        debt_to_equity = None
+        if "totalShareholderEquity" in balance_sheet.columns and len(balance_sheet.index) > period_idx:
+            try:
+                total_equity = float(balance_sheet["totalShareholderEquity"].iloc[period_idx])
+                # 计算总债务 = 短期债务 + 长期债务
+                total_debt = 0
+                if "shortTermDebt" in balance_sheet.columns:
+                    short_debt = balance_sheet["shortTermDebt"].iloc[period_idx]
+                    if short_debt and short_debt != 'None':
+                        total_debt += float(short_debt)
+                if "longTermDebt" in balance_sheet.columns:
+                    long_debt = balance_sheet["longTermDebt"].iloc[period_idx]
+                    if long_debt and long_debt != 'None':
+                        total_debt += float(long_debt)
+                
+                if total_equity != 0:
+                    debt_to_equity = total_debt / total_equity
+            except (ValueError, TypeError):
+                pass
+        
+        # 计算enterprise_value (Market Cap + Total Debt - Cash)
+        enterprise_value = None
+        market_cap = safe_get_float(overview, "MarketCapitalization", 0) if period_idx == 0 else None  # 只有最新周期有市值
+        if market_cap and "totalShareholderEquity" in balance_sheet.columns and len(balance_sheet.index) > period_idx:
+            try:
+                # 计算总债务
+                total_debt = 0
+                if "shortTermDebt" in balance_sheet.columns:
+                    short_debt = balance_sheet["shortTermDebt"].iloc[period_idx]
+                    if short_debt and short_debt != 'None':
+                        total_debt += float(short_debt)
+                if "longTermDebt" in balance_sheet.columns:
+                    long_debt = balance_sheet["longTermDebt"].iloc[period_idx]
+                    if long_debt and long_debt != 'None':
+                        total_debt += float(long_debt)
+                
+                # 获取现金和现金等价物
+                cash = 0
+                if "cashAndCashEquivalentsAtCarryingValue" in balance_sheet.columns:
+                    cash_value = balance_sheet["cashAndCashEquivalentsAtCarryingValue"].iloc[period_idx]
+                    if cash_value and cash_value != 'None':
+                        cash = float(cash_value)
+                elif "cashAndShortTermInvestments" in balance_sheet.columns:
+                    cash_value = balance_sheet["cashAndShortTermInvestments"].iloc[period_idx]
+                    if cash_value and cash_value != 'None':
+                        cash = float(cash_value)
+                
+                enterprise_value = market_cap + total_debt - cash
+            except (ValueError, TypeError):
+                pass
 
-    metrics_data = {
-        "return_on_equity": safe_get_float(overview, "ReturnOnEquityTTM"),
-        "net_margin": safe_get_float(overview, "ProfitMargin"),
-        "operating_margin": safe_get_float(overview, "OperatingMarginTTM"),
-        "revenue_growth": calculate_growth(income_stmt, "totalRevenue") if "totalRevenue" in income_stmt.columns and len(income_stmt.index) > 0 else None,
-        "earnings_growth": calculate_growth(income_stmt, "netIncome") if "netIncome" in income_stmt.columns and len(income_stmt.index) > 0 else None,
-        "book_value_growth": book_value_growth,
-        "current_ratio": current_ratio,
-        "debt_to_equity": debt_to_equity,
-        "price_to_earnings_ratio": safe_get_float(overview, "PERatio"),
-        "price_to_book_ratio": safe_get_float(overview, "PriceToBookRatio"),
-        "price_to_sales_ratio": safe_get_float(overview, "PriceToSalesRatioTTM"),
-        "earnings_per_share": safe_get_float(overview, "EPS"),
-        "free_cash_flow_per_share": free_cash_flow_per_share if shares != 0 else None,
-        "issuance_or_purchase_of_equity_shares": issuance_or_purchase_of_equity_shares,
-        "enterprise_value": enterprise_value,
-        "enterprise_value_to_ebitda_ratio": safe_get_float(overview, "EVToEBITDA"),
-        "market_cap": safe_get_float(overview, "MarketCapitalization"),
-        "report_period": report_date or datetime.now().strftime('%Y-%m-%d')
-    }
+        metrics_data = {
+            "return_on_equity": safe_get_float(overview, "ReturnOnEquityTTM", 0) if period_idx == 0 else None,
+            "net_margin": safe_get_float(overview, "ProfitMargin", 0) if period_idx == 0 else None,
+            "operating_margin": safe_get_float(overview, "OperatingMarginTTM", 0) if period_idx == 0 else None,
+            "revenue_growth": calculate_growth(income_stmt, "totalRevenue") if "totalRevenue" in income_stmt.columns and len(income_stmt.index) > period_idx and period_idx == 0 else None,
+            "earnings_growth": calculate_growth(income_stmt, "netIncome") if "netIncome" in income_stmt.columns and len(income_stmt.index) > period_idx and period_idx == 0 else None,
+            "book_value_growth": book_value_growth,
+            "current_ratio": current_ratio,
+            "debt_to_equity": debt_to_equity,
+            "price_to_earnings_ratio": safe_get_float(overview, "PERatio", 0) if period_idx == 0 else None,
+            "price_to_book_ratio": safe_get_float(overview, "PriceToBookRatio", 0) if period_idx == 0 else None,
+            "price_to_sales_ratio": safe_get_float(overview, "PriceToSalesRatioTTM", 0) if period_idx == 0 else None,
+            "earnings_per_share": safe_get_float(overview, "EPS", 0) if period_idx == 0 else None,
+            "free_cash_flow_per_share": free_cash_flow_per_share if shares != 0 else None,
+            "issuance_or_purchase_of_equity_shares": issuance_or_purchase_of_equity_shares,
+            "enterprise_value": enterprise_value,
+            "enterprise_value_to_ebitda_ratio": safe_get_float(overview, "EVToEBITDA", 0) if period_idx == 0 else None,
+            "market_cap": market_cap,
+            "report_period": report_date or datetime.now().strftime('%Y-%m-%d')
+        }
+        
+        # 清理None值，对于确实需要显示缺失数据的情况
+        missing_fields = [k for k, v in metrics_data.items() if v is None]
+        if missing_fields and period_idx == 0:  # 只在第一个周期打印警告
+            print(f"Warning: {ticker} 缺失以下财务指标: {', '.join(missing_fields)}")
+        
+        metrics = MetricsWrapper(metrics_data)
+        metrics_list.append(metrics)
     
-    # 清理None值，对于确实需要显示缺失数据的情况
-    missing_fields = [k for k, v in metrics_data.items() if v is None]
-    if missing_fields:
-        print(f"Warning: {ticker} 缺失以下财务指标: {', '.join(missing_fields)}")
-    
-    metrics = MetricsWrapper(metrics_data)
-    return [metrics]
+    return metrics_list
 
 def _get_default_metrics() -> list:
     """获取默认的空指标"""
