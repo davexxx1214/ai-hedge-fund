@@ -65,7 +65,10 @@ def valuation_analyst_agent(state: AgentState):
         # ------------------------------------------------------------------
         # Valuation models
         # ------------------------------------------------------------------
-        wc_change = li_curr.working_capital - li_prev.working_capital
+        # 安全地计算营运资金变化，处理空值
+        wc_curr = getattr(li_curr, 'working_capital', None) or 0
+        wc_prev = getattr(li_prev, 'working_capital', None) or 0
+        wc_change = wc_curr - wc_prev
 
         # Owner Earnings
         owner_val = calculate_owner_earnings_value(
@@ -174,6 +177,12 @@ def calculate_owner_earnings_value(
     num_years: int = 5,
 ) -> float:
     """Buffett owner‑earnings valuation with margin‑of‑safety."""
+    # 安全地处理空值
+    net_income = net_income or 0
+    depreciation = depreciation or 0
+    capex = capex or 0
+    working_capital_change = working_capital_change or 0
+    
     if not all(isinstance(x, (int, float)) for x in [net_income, depreciation, capex, working_capital_change]):
         return 0
 
