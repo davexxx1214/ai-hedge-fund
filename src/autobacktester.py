@@ -160,43 +160,120 @@ class EqualWeightBacktester:
         print(f"\n初始投资后的投资组合价值: ${initial_portfolio_value:,.2f}")
 
         # ---------------------------------------------------------------
-        # 2) 在结束日期计算最终价值
+        # 2) 计算整个投资期间每个交易日的投资组合价值
         # ---------------------------------------------------------------
-        print(f"\n计算 {self.end_date} 的最终投资组合价值...")
+        print(f"\n计算投资期间每日投资组合价值...")
         
+        # 生成交易日期范围
+        dates = pd.date_range(self.start_date, self.end_date, freq="B")  # B = 工作日
+        
+        for current_date in dates[1:]:  # 跳过第一个日期（已经记录）
+            current_date_str = current_date.strftime("%Y-%m-%d")
+            
+            try:
+                current_prices = {}
+                missing_data = False
+
+                for ticker in self.tickers:
+                    try:
+                        # 获取当前日期附近的价格数据
+                        date_range_start = (current_date - timedelta(days=5)).strftime("%Y-%m-%d")
+                        price_data = get_price_data(ticker, date_range_start, current_date_str)
+                        if price_data.empty:
+                            # 如果当天没有数据，使用前一个有效价格
+                            continue
+                        current_prices[ticker] = price_data.iloc[-1]["close"]
+                    except Exception as e:
+                        # 如果获取价格失败，跳过这个股票
+                        continue
+
+                # 如果我们有足够的价格数据，计算投资组合价值
+                if len(current_prices) == len(self.tickers):
+                    daily_portfolio_value = self.calculate_portfolio_value(current_prices)
+                    self.portfolio_values.append({
+                        "Date": current_date,
+                        "Portfolio Value": daily_portfolio_value
+                    })
+                elif len(current_prices) > 0:
+                    # 如果只有部分股票有价格数据，使用可用的价格和前一日的价格
+                    # 获取前一日的价格作为备用
+                    prev_date = (current_date - timedelta(days=1)).strftime("%Y-%m-%d")
+                    for ticker in self.tickers:
+                        if ticker not in current_prices:
+                            try:
+                                prev_range_start = (current_date - timedelta(days=10)).strftime("%Y-%m-%d")
+                                prev_price_data = get_price_data(ticker, prev_range_start, prev_date)
+                                if not prev_price_data.empty:
+                                    current_prices[ticker] = prev_price_data.iloc[-1]["close"]
+                            except:
+                                # 如果还是没有数据，使用开始日期的价格
+                                current_prices[ticker] = start_prices.get(ticker, 0)
+                    
+                    if len(current_prices) == len(self.tickers):
+                        daily_portfolio_value = self.calculate_portfolio_value(current_prices)
+                        self.portfolio_values.append({
+                            "Date": current_date,
+                            "Portfolio Value": daily_portfolio_value
+                        })
+
+            except Exception as e:
+                # 如果当天出错，跳过
+                continue
+
+        # 确保我们有结束日期的数据
         try:
             end_prices = {}
             missing_data = False
 
             for ticker in self.tickers:
                 try:
-                    # 获取结束日期附近的价格范围
                     end_date_range_start = (datetime.strptime(self.end_date, "%Y-%m-%d") - timedelta(days=5)).strftime("%Y-%m-%d")
                     price_data = get_price_data(ticker, end_date_range_start, self.end_date)
                     if price_data.empty:
                         print(f"警告: {ticker} 在 {self.end_date} 没有价格数据")
-                        missing_data = True
-                        break
-                    end_prices[ticker] = price_data.iloc[-1]["close"]
+                        # 使用最后可用的价格
+                        if self.portfolio_values:
+                            # 使用最近一次计算的价格
+                            end_prices[ticker] = start_prices[ticker]  # 备用方案
+                        else:
+                            missing_data = True
+                            break
+                    else:
+                        end_prices[ticker] = price_data.iloc[-1]["close"]
                 except Exception as e:
                     print(f"获取 {ticker} 在 {self.end_date} 的价格时出错: {e}")
-                    missing_data = True
-                    break
+                    end_prices[ticker] = start_prices[ticker]  # 使用开始价格作为备用
 
-            if missing_data:
-                print(f"由于缺少价格数据，无法计算最终价值")
-                return {}
+            # 计算最终投资组合价值
+            if not missing_data:
+                final_portfolio_value = self.calculate_portfolio_value(end_prices)
+                
+                # 检查是否已经有结束日期的记录
+                end_date_dt = datetime.strptime(self.end_date, "%Y-%m-%d")
+                has_end_date = any(record["Date"] == end_date_dt for record in self.portfolio_values)
+                
+                if not has_end_date:
+                    self.portfolio_values.append({
+                        "Date": end_date_dt,
+                        "Portfolio Value": final_portfolio_value
+                    })
+            else:
+                # 如果缺少数据，使用最后一个可用的投资组合价值
+                if self.portfolio_values:
+                    final_portfolio_value = self.portfolio_values[-1]["Portfolio Value"]
+                    end_prices = start_prices  # 使用开始价格作为备用
+                else:
+                    return {}
 
         except Exception as e:
             print(f"获取 {self.end_date} 价格时出错: {e}")
-            return {}
-
-        # 计算最终投资组合价值
-        final_portfolio_value = self.calculate_portfolio_value(end_prices)
-        self.portfolio_values.append({
-            "Date": datetime.strptime(self.end_date, "%Y-%m-%d"),
-            "Portfolio Value": final_portfolio_value
-        })
+            if self.portfolio_values:
+                final_portfolio_value = self.portfolio_values[-1]["Portfolio Value"]
+                end_prices = start_prices
+            else:
+                return {}
+        
+        print(f"成功计算了 {len(self.portfolio_values)} 个交易日的投资组合价值")
 
         # 计算收益
         total_return = ((final_portfolio_value - self.initial_capital) / self.initial_capital) * 100
@@ -270,7 +347,7 @@ class EqualWeightBacktester:
         # 绘制投资组合价值随时间变化的图表
         plt.figure(figsize=(12, 6))
         plt.plot(performance_df.index, performance_df["Portfolio Value"], 
-                color="blue", linewidth=3, marker='o', markersize=10)
+                color="blue", linewidth=3, marker='o', markersize=6)
         plt.title("等权重买入持有策略 - 投资组合价值", fontsize=16, fontweight='bold')
         plt.ylabel("投资组合价值 ($)", fontsize=12)
         plt.xlabel("日期", fontsize=12)
@@ -280,15 +357,59 @@ class EqualWeightBacktester:
         ax = plt.gca()
         ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'${x:,.0f}'))
         
-        # 添加数值标签
-        for date, value in zip(performance_df.index, performance_df["Portfolio Value"]):
-            plt.annotate(f'${value:,.0f}', 
-                        (date, value), 
-                        textcoords="offset points", 
-                        xytext=(0,10), 
-                        ha='center',
-                        fontsize=10,
-                        fontweight='bold')
+        # 只标注关键的四个值：起始值、最高值、最低值、终值
+        values = performance_df["Portfolio Value"]
+        
+        # 找到关键点
+        start_date = values.index[0]
+        end_date = values.index[-1]
+        max_value_date = values.idxmax()
+        min_value_date = values.idxmin()
+        
+        start_value = values.iloc[0]
+        end_value = values.iloc[-1]
+        max_value = values.max()
+        min_value = values.min()
+        
+        # 标注起始值
+        plt.annotate(f'起始: ${start_value:,.0f}', 
+                    (start_date, start_value), 
+                    textcoords="offset points", 
+                    xytext=(-20, 15), 
+                    ha='center',
+                    fontsize=10,
+                    fontweight='bold',
+                    bbox=dict(boxstyle="round,pad=0.3", facecolor="lightblue", alpha=0.7))
+        
+        # 标注最高值
+        plt.annotate(f'最高: ${max_value:,.0f}', 
+                    (max_value_date, max_value), 
+                    textcoords="offset points", 
+                    xytext=(0, 20), 
+                    ha='center',
+                    fontsize=10,
+                    fontweight='bold',
+                    bbox=dict(boxstyle="round,pad=0.3", facecolor="lightgreen", alpha=0.7))
+        
+        # 标注最低值
+        plt.annotate(f'最低: ${min_value:,.0f}', 
+                    (min_value_date, min_value), 
+                    textcoords="offset points", 
+                    xytext=(0, -25), 
+                    ha='center',
+                    fontsize=10,
+                    fontweight='bold',
+                    bbox=dict(boxstyle="round,pad=0.3", facecolor="lightcoral", alpha=0.7))
+        
+        # 标注终值
+        plt.annotate(f'终值: ${end_value:,.0f}', 
+                    (end_date, end_value), 
+                    textcoords="offset points", 
+                    xytext=(20, 15), 
+                    ha='center',
+                    fontsize=10,
+                    fontweight='bold',
+                    bbox=dict(boxstyle="round,pad=0.3", facecolor="lightyellow", alpha=0.7))
         
         plt.tight_layout()
         plt.show()
