@@ -654,6 +654,16 @@ def _fetch_and_get_line_items(ticker: str, line_items: list, limit: int, cache_p
 def _calculate_line_items(ticker: str, line_items: list, limit: int, income_stmt: pd.DataFrame, 
                          balance_sheet: pd.DataFrame, cash_flow: pd.DataFrame, overview: pd.DataFrame) -> list:
     """计算指定的财报项目"""
+    
+    def safe_float_convert(value, default=0.0):
+        """安全地将值转换为浮点数，处理None和'None'字符串"""
+        if value is None or str(value) == 'None' or str(value) == '':
+            return default
+        try:
+            return float(value)
+        except (ValueError, TypeError):
+            return default
+    
     results = []
     
     # 确保数据是DataFrame格式
@@ -688,7 +698,7 @@ def _calculate_line_items(ticker: str, line_items: list, limit: int, income_stmt
             # 从income_stmt获取
             if not found and mapped_item in income_stmt.columns.tolist() and i < len(income_stmt):
                 try:
-                    value = float(income_stmt[mapped_item].iloc[i])
+                    value = safe_float_convert(income_stmt[mapped_item].iloc[i])
                     found = True
                 except (ValueError, TypeError):
                     pass
@@ -696,7 +706,7 @@ def _calculate_line_items(ticker: str, line_items: list, limit: int, income_stmt
             # 从balance_sheet获取
             if not found and mapped_item in balance_sheet.columns.tolist() and i < len(balance_sheet):
                 try:
-                    value = float(balance_sheet[mapped_item].iloc[i])
+                    value = safe_float_convert(balance_sheet[mapped_item].iloc[i])
                     found = True
                 except (ValueError, TypeError):
                     pass
@@ -704,7 +714,7 @@ def _calculate_line_items(ticker: str, line_items: list, limit: int, income_stmt
             # 从cash_flow获取
             if not found and mapped_item in cash_flow.columns.tolist() and i < len(cash_flow):
                 try:
-                    value = float(cash_flow[mapped_item].iloc[i])
+                    value = safe_float_convert(cash_flow[mapped_item].iloc[i])
                     found = True
                 except (ValueError, TypeError):
                     pass
@@ -712,7 +722,7 @@ def _calculate_line_items(ticker: str, line_items: list, limit: int, income_stmt
             # 从overview获取
             if not found and mapped_item in overview.columns.tolist() and len(overview) > 0:
                 try:
-                    value = float(overview[mapped_item].iloc[0])
+                    value = safe_float_convert(overview[mapped_item].iloc[0])
                     found = True
                 except (ValueError, TypeError):
                     pass
@@ -723,8 +733,8 @@ def _calculate_line_items(ticker: str, line_items: list, limit: int, income_stmt
                     try:
                         if ("operatingCashflow" in cash_flow.columns.tolist() and 
                             "capitalExpenditures" in cash_flow.columns.tolist() and i < len(cash_flow)):
-                            operating_cash = float(cash_flow["operatingCashflow"].iloc[i])
-                            capex = float(cash_flow["capitalExpenditures"].iloc[i])
+                            operating_cash = safe_float_convert(cash_flow["operatingCashflow"].iloc[i])
+                            capex = safe_float_convert(cash_flow["capitalExpenditures"].iloc[i])
                             value = operating_cash - capex
                             found = True
                     except Exception as e:
@@ -735,8 +745,8 @@ def _calculate_line_items(ticker: str, line_items: list, limit: int, income_stmt
                         # Working Capital = Current Assets - Current Liabilities
                         if ("totalCurrentAssets" in balance_sheet.columns.tolist() and 
                             "totalCurrentLiabilities" in balance_sheet.columns.tolist() and i < len(balance_sheet)):
-                            current_assets = float(balance_sheet["totalCurrentAssets"].iloc[i])
-                            current_liabilities = float(balance_sheet["totalCurrentLiabilities"].iloc[i])
+                            current_assets = safe_float_convert(balance_sheet["totalCurrentAssets"].iloc[i])
+                            current_liabilities = safe_float_convert(balance_sheet["totalCurrentLiabilities"].iloc[i])
                             value = current_assets - current_liabilities
                             found = True
                     except Exception as e:
@@ -746,13 +756,13 @@ def _calculate_line_items(ticker: str, line_items: list, limit: int, income_stmt
                     try:
                         # 从现金流量表获取折旧和摊销
                         if "depreciationAndAmortization" in cash_flow.columns.tolist() and i < len(cash_flow):
-                            value = float(cash_flow["depreciationAndAmortization"].iloc[i])
+                            value = safe_float_convert(cash_flow["depreciationAndAmortization"].iloc[i])
                             found = True
                         elif "depreciation" in cash_flow.columns.tolist() and i < len(cash_flow):
-                            value = float(cash_flow["depreciation"].iloc[i])
+                            value = safe_float_convert(cash_flow["depreciation"].iloc[i])
                             found = True
                         elif "depreciationDepletionAndAmortization" in cash_flow.columns.tolist() and i < len(cash_flow):
-                            value = float(cash_flow["depreciationDepletionAndAmortization"].iloc[i])
+                            value = safe_float_convert(cash_flow["depreciationDepletionAndAmortization"].iloc[i])
                             found = True
                     except Exception as e:
                         print(f"Error processing {item}: {str(e)}")
@@ -761,7 +771,7 @@ def _calculate_line_items(ticker: str, line_items: list, limit: int, income_stmt
                     try:
                         # 资本支出通常在现金流量表中
                         if "capitalExpenditures" in cash_flow.columns.tolist() and i < len(cash_flow):
-                            value = float(cash_flow["capitalExpenditures"].iloc[i])
+                            value = safe_float_convert(cash_flow["capitalExpenditures"].iloc[i])
                             # 通常资本支出是负数，但我们需要正数用于计算
                             value = abs(value)
                             found = True
@@ -771,13 +781,13 @@ def _calculate_line_items(ticker: str, line_items: list, limit: int, income_stmt
                 elif item == "earnings_per_share":
                     try:
                         if "netIncome" in income_stmt.columns.tolist() and i < len(income_stmt):
-                            net_income = float(income_stmt["netIncome"].iloc[i])
+                            net_income = safe_float_convert(income_stmt["netIncome"].iloc[i])
                             shares = 0
                             if ("commonStockSharesOutstanding" in balance_sheet.columns.tolist() and 
                                 i < len(balance_sheet)):
-                                shares = float(balance_sheet["commonStockSharesOutstanding"].iloc[i])
+                                shares = safe_float_convert(balance_sheet["commonStockSharesOutstanding"].iloc[i])
                             elif "SharesOutstanding" in overview.columns.tolist() and len(overview) > 0:
-                                shares = float(overview["SharesOutstanding"].iloc[0])
+                                shares = safe_float_convert(overview["SharesOutstanding"].iloc[0])
                             if shares != 0:
                                 value = net_income / shares
                                 found = True
@@ -790,28 +800,28 @@ def _calculate_line_items(ticker: str, line_items: list, limit: int, income_stmt
                             # 计算股权发行净额
                             equity_issuance = 0
                             if "proceedsFromIssuanceOfCommonStock" in cash_flow.columns.tolist():
-                                common_stock_issuance = cash_flow["proceedsFromIssuanceOfCommonStock"].iloc[i]
+                                common_stock_issuance = safe_float_convert(cash_flow["proceedsFromIssuanceOfCommonStock"].iloc[i])
                                 if common_stock_issuance and common_stock_issuance != 'None':
-                                    equity_issuance += float(common_stock_issuance)
+                                    equity_issuance += common_stock_issuance
                             if "proceedsFromIssuanceOfPreferredStock" in cash_flow.columns.tolist():
-                                preferred_stock_issuance = cash_flow["proceedsFromIssuanceOfPreferredStock"].iloc[i]
+                                preferred_stock_issuance = safe_float_convert(cash_flow["proceedsFromIssuanceOfPreferredStock"].iloc[i])
                                 if preferred_stock_issuance and preferred_stock_issuance != 'None':
-                                    equity_issuance += float(preferred_stock_issuance)
+                                    equity_issuance += preferred_stock_issuance
                             
                             # 计算股权回购净额
                             equity_repurchase = 0
                             if "paymentsForRepurchaseOfCommonStock" in cash_flow.columns.tolist():
-                                common_stock_repurchase = cash_flow["paymentsForRepurchaseOfCommonStock"].iloc[i]
+                                common_stock_repurchase = safe_float_convert(cash_flow["paymentsForRepurchaseOfCommonStock"].iloc[i])
                                 if common_stock_repurchase and common_stock_repurchase != 'None':
-                                    equity_repurchase += float(common_stock_repurchase)
+                                    equity_repurchase += common_stock_repurchase
                             if "paymentsForRepurchaseOfEquity" in cash_flow.columns.tolist():
-                                equity_repurchase_general = cash_flow["paymentsForRepurchaseOfEquity"].iloc[i]
+                                equity_repurchase_general = safe_float_convert(cash_flow["paymentsForRepurchaseOfEquity"].iloc[i])
                                 if equity_repurchase_general and equity_repurchase_general != 'None':
-                                    equity_repurchase += float(equity_repurchase_general)
+                                    equity_repurchase += equity_repurchase_general
                             if "paymentsForRepurchaseOfPreferredStock" in cash_flow.columns.tolist():
-                                preferred_stock_repurchase = cash_flow["paymentsForRepurchaseOfPreferredStock"].iloc[i]
+                                preferred_stock_repurchase = safe_float_convert(cash_flow["paymentsForRepurchaseOfPreferredStock"].iloc[i])
                                 if preferred_stock_repurchase and preferred_stock_repurchase != 'None':
-                                    equity_repurchase += float(preferred_stock_repurchase)
+                                    equity_repurchase += preferred_stock_repurchase
                             
                             # 计算净额
                             value = equity_issuance - equity_repurchase
@@ -824,8 +834,8 @@ def _calculate_line_items(ticker: str, line_items: list, limit: int, income_stmt
                         # Gross Margin = Gross Profit / Total Revenue
                         if ("grossProfit" in income_stmt.columns.tolist() and 
                             "totalRevenue" in income_stmt.columns.tolist() and i < len(income_stmt)):
-                            gross_profit = float(income_stmt["grossProfit"].iloc[i])
-                            total_revenue = float(income_stmt["totalRevenue"].iloc[i])
+                            gross_profit = safe_float_convert(income_stmt["grossProfit"].iloc[i])
+                            total_revenue = safe_float_convert(income_stmt["totalRevenue"].iloc[i])
                             if total_revenue != 0:
                                 value = gross_profit / total_revenue
                                 found = True
@@ -837,8 +847,8 @@ def _calculate_line_items(ticker: str, line_items: list, limit: int, income_stmt
                         # Operating Margin = Operating Income / Total Revenue
                         if ("operatingIncome" in income_stmt.columns.tolist() and 
                             "totalRevenue" in income_stmt.columns.tolist() and i < len(income_stmt)):
-                            operating_income = float(income_stmt["operatingIncome"].iloc[i])
-                            total_revenue = float(income_stmt["totalRevenue"].iloc[i])
+                            operating_income = safe_float_convert(income_stmt["operatingIncome"].iloc[i])
+                            total_revenue = safe_float_convert(income_stmt["totalRevenue"].iloc[i])
                             if total_revenue != 0:
                                 value = operating_income / total_revenue
                                 found = True
@@ -849,7 +859,8 @@ def _calculate_line_items(ticker: str, line_items: list, limit: int, income_stmt
                     try:
                         # 研发费用直接从利润表获取
                         if "researchAndDevelopment" in income_stmt.columns.tolist() and i < len(income_stmt):
-                            value = float(income_stmt["researchAndDevelopment"].iloc[i])
+                            rd_value = safe_float_convert(income_stmt["researchAndDevelopment"].iloc[i])
+                            value = rd_value  # safe_float_convert already handles None values by returning 0.0
                             found = True
                     except Exception as e:
                         print(f"Error processing {item}: {str(e)}")
@@ -863,23 +874,23 @@ def _calculate_line_items(ticker: str, line_items: list, limit: int, income_stmt
                         if i < len(balance_sheet):
                             # 短期债务
                             if "shortTermDebt" in balance_sheet.columns.tolist():
-                                short_term_debt = balance_sheet["shortTermDebt"].iloc[i]
+                                short_term_debt = safe_float_convert(balance_sheet["shortTermDebt"].iloc[i])
                                 if short_term_debt and short_term_debt != 'None':
-                                    total_debt += float(short_term_debt)
+                                    total_debt += short_term_debt
                                     debt_found = True
                             
                             # 长期债务
                             if "longTermDebt" in balance_sheet.columns.tolist():
-                                long_term_debt = balance_sheet["longTermDebt"].iloc[i]
+                                long_term_debt = safe_float_convert(balance_sheet["longTermDebt"].iloc[i])
                                 if long_term_debt and long_term_debt != 'None':
-                                    total_debt += float(long_term_debt)
+                                    total_debt += long_term_debt
                                     debt_found = True
                             
                             # 总债务（如果直接可用）
                             if "totalDebt" in balance_sheet.columns.tolist():
-                                total_debt_direct = balance_sheet["totalDebt"].iloc[i]
+                                total_debt_direct = safe_float_convert(balance_sheet["totalDebt"].iloc[i])
                                 if total_debt_direct and total_debt_direct != 'None':
-                                    total_debt = float(total_debt_direct)
+                                    total_debt = total_debt_direct
                                     debt_found = True
                         
                         if debt_found:
@@ -896,21 +907,21 @@ def _calculate_line_items(ticker: str, line_items: list, limit: int, income_stmt
                             goodwill_found = False
                             
                             if "goodwill" in balance_sheet.columns.tolist():
-                                goodwill = balance_sheet["goodwill"].iloc[i]
+                                goodwill = safe_float_convert(balance_sheet["goodwill"].iloc[i])
                                 if goodwill and goodwill != 'None':
-                                    goodwill_total += float(goodwill)
+                                    goodwill_total += goodwill
                                     goodwill_found = True
                             
                             if "intangibleAssets" in balance_sheet.columns.tolist():
-                                intangible = balance_sheet["intangibleAssets"].iloc[i]
+                                intangible = safe_float_convert(balance_sheet["intangibleAssets"].iloc[i])
                                 if intangible and intangible != 'None':
-                                    goodwill_total += float(intangible)
+                                    goodwill_total += intangible
                                     goodwill_found = True
                             
                             if "goodwillAndIntangibleAssets" in balance_sheet.columns.tolist():
-                                goodwill_intangible = balance_sheet["goodwillAndIntangibleAssets"].iloc[i]
+                                goodwill_intangible = safe_float_convert(balance_sheet["goodwillAndIntangibleAssets"].iloc[i])
                                 if goodwill_intangible and goodwill_intangible != 'None':
-                                    goodwill_total = float(goodwill_intangible)
+                                    goodwill_total = goodwill_intangible
                                     goodwill_found = True
                             
                             if goodwill_found:
@@ -925,8 +936,8 @@ def _calculate_line_items(ticker: str, line_items: list, limit: int, income_stmt
                         if ("operatingIncome" in income_stmt.columns.tolist() and 
                             "totalAssets" in balance_sheet.columns.tolist() and 
                             i < len(income_stmt) and i < len(balance_sheet)):
-                            operating_income = float(income_stmt["operatingIncome"].iloc[i])
-                            total_assets = float(balance_sheet["totalAssets"].iloc[i])
+                            operating_income = safe_float_convert(income_stmt["operatingIncome"].iloc[i])
+                            total_assets = safe_float_convert(balance_sheet["totalAssets"].iloc[i])
                             if total_assets != 0:
                                 # 简化的ROIC计算
                                 value = operating_income / total_assets
@@ -938,21 +949,21 @@ def _calculate_line_items(ticker: str, line_items: list, limit: int, income_stmt
                     try:
                         # Debt to Equity = Total Debt / Total Equity
                         if ("totalShareholderEquity" in balance_sheet.columns.tolist() and i < len(balance_sheet)):
-                            total_equity = float(balance_sheet["totalShareholderEquity"].iloc[i])
+                            total_equity = safe_float_convert(balance_sheet["totalShareholderEquity"].iloc[i])
                             # 计算总债务
                             total_debt = 0
                             debt_found = False
                             
                             if "shortTermDebt" in balance_sheet.columns.tolist():
-                                short_debt = balance_sheet["shortTermDebt"].iloc[i]
+                                short_debt = safe_float_convert(balance_sheet["shortTermDebt"].iloc[i])
                                 if short_debt and short_debt != 'None':
-                                    total_debt += float(short_debt)
+                                    total_debt += short_debt
                                     debt_found = True
                             
                             if "longTermDebt" in balance_sheet.columns.tolist():
-                                long_debt = balance_sheet["longTermDebt"].iloc[i]
+                                long_debt = safe_float_convert(balance_sheet["longTermDebt"].iloc[i])
                                 if long_debt and long_debt != 'None':
-                                    total_debt += float(long_debt)
+                                    total_debt += long_debt
                                     debt_found = True
                             
                             if debt_found and total_equity != 0:
@@ -963,60 +974,57 @@ def _calculate_line_items(ticker: str, line_items: list, limit: int, income_stmt
                 
                 elif item == "dividends_and_other_cash_distributions":
                     try:
-                        # 从现金流量表获取分红数据
-                        if i < len(cash_flow):
-                            dividends_total = 0
-                            div_found = False
-                            
-                            if "dividendPayout" in cash_flow.columns.tolist():
-                                dividends = cash_flow["dividendPayout"].iloc[i]
-                                if dividends and dividends != 'None':
-                                    dividends_total = float(dividends)  # 已经是正数
-                                    div_found = True
-                            elif "dividendPayoutCommonStock" in cash_flow.columns.tolist():
-                                dividends = cash_flow["dividendPayoutCommonStock"].iloc[i]
-                                if dividends and dividends != 'None':
-                                    dividends_total = float(dividends)
-                                    div_found = True
-                            
-                            # 备用字段名（如果上述字段不存在）
-                            if not div_found:
-                                if "dividendsPaid" in cash_flow.columns.tolist():
-                                    dividends = cash_flow["dividendsPaid"].iloc[i]
-                                    if dividends and dividends != 'None':
-                                        dividends_total = abs(float(dividends))  # 通常为负数，取绝对值
+                        dividends_total = 0
+                        div_found = False
+                        
+                        # 尝试多个可能的分红字段名
+                        dividend_fields = [
+                            "dividendPayout", 
+                            "dividendPayoutCommonStock",
+                            "dividendsPaid",
+                            "paymentsOfDividends", 
+                            "cashDividendsPaid"
+                        ]
+                        
+                        for field in dividend_fields:
+                            if field in cash_flow.columns:
+                                try:
+                                    # 过滤掉 None 值并求和
+                                    field_values = cash_flow[field].apply(
+                                        lambda x: abs(float(x)) if x not in [None, '', 'None'] else 0
+                                    )
+                                    if field_values.sum() > 0:
+                                        dividends_total = field_values.sum()
                                         div_found = True
-                                
-                                if "paymentsOfDividends" in cash_flow.columns.tolist():
-                                    payments = cash_flow["paymentsOfDividends"].iloc[i]
-                                    if payments and payments != 'None':
-                                        dividends_total = abs(float(payments))
-                                        div_found = True
-                                
-                                if "cashDividendsPaid" in cash_flow.columns.tolist():
-                                    cash_div = cash_flow["cashDividendsPaid"].iloc[i]
-                                    if cash_div and cash_div != 'None':
-                                        dividends_total = abs(float(cash_div))
-                                        div_found = True
-                            
-                            if div_found:
-                                value = dividends_total
-                                found = True
+                                        break
+                                except Exception:
+                                    continue
+                        
+                        if div_found:
+                            value = dividends_total
+                            found = True
+                        else:
+                            # 如果没有找到分红数据，设为0（公司可能不支付股息）
+                            value = 0.0
+                            found = True
+                        
                     except Exception as e:
-                        print(f"Error processing {item}: {str(e)}")
+                        # 如果计算失败，设为0而不是None
+                        value = 0.0
+                        found = True
                 
                 elif item == "book_value_per_share":
                     try:
                         # Book Value Per Share = Total Shareholders Equity / Shares Outstanding
                         if ("totalShareholderEquity" in balance_sheet.columns.tolist() and i < len(balance_sheet)):
-                            total_equity = float(balance_sheet["totalShareholderEquity"].iloc[i])
+                            total_equity = safe_float_convert(balance_sheet["totalShareholderEquity"].iloc[i])
                             shares = 0
                             
                             if ("commonStockSharesOutstanding" in balance_sheet.columns.tolist() and 
                                 i < len(balance_sheet)):
-                                shares = float(balance_sheet["commonStockSharesOutstanding"].iloc[i])
+                                shares = safe_float_convert(balance_sheet["commonStockSharesOutstanding"].iloc[i])
                             elif "SharesOutstanding" in overview.columns.tolist() and len(overview) > 0:
-                                shares = float(overview["SharesOutstanding"].iloc[0])
+                                shares = safe_float_convert(overview["SharesOutstanding"].iloc[0])
                             
                             if shares != 0:
                                 value = total_equity / shares
@@ -1028,13 +1036,18 @@ def _calculate_line_items(ticker: str, line_items: list, limit: int, income_stmt
                     try:
                         # Operating Expenses 从利润表获取
                         if "operatingExpenses" in income_stmt.columns.tolist() and i < len(income_stmt):
-                            value = float(income_stmt["operatingExpenses"].iloc[i])
-                            found = True
+                            op_exp_value = safe_float_convert(income_stmt["operatingExpenses"].iloc[i])
+                            if op_exp_value != 0.0:  # Only proceed if we have actual data
+                                value = op_exp_value
+                                found = True
                         elif ("sellingGeneralAndAdministrative" in income_stmt.columns.tolist() and 
                               "researchAndDevelopment" in income_stmt.columns.tolist() and i < len(income_stmt)):
                             # 如果没有直接的operating expenses，计算 SG&A + R&D
-                            sga = float(income_stmt["sellingGeneralAndAdministrative"].iloc[i])
-                            rd = float(income_stmt["researchAndDevelopment"].iloc[i])
+                            sga_value = safe_float_convert(income_stmt["sellingGeneralAndAdministrative"].iloc[i])
+                            rd_value = safe_float_convert(income_stmt["researchAndDevelopment"].iloc[i])
+                            
+                            sga = sga_value  # safe_float_convert already handled None values
+                            rd = rd_value    # safe_float_convert already handled None values
                             value = sga + rd
                             found = True
                     except Exception as e:
@@ -1076,14 +1089,25 @@ def _calculate_ttm_line_items(ticker: str, line_items: list, limit: int, income_
             value = None
             found = False
             # 利润表/现金流量表累计类
-            if item in ["net_income", "revenue", "total_revenue", "gross_profit", "capital_expenditure", "depreciation_and_amortization", "free_cash_flow"]:
+            if item in ["net_income", "revenue", "total_revenue", "gross_profit", "capital_expenditure", "depreciation_and_amortization", "free_cash_flow", "research_and_development"]:
                 # 现金流量表和利润表累计
                 if mapped_item in ttm_income.columns:
                     try:
-                        value = ttm_income[mapped_item].astype(float).sum()
+                        # 对于研发支出，需要特殊处理None值
+                        if item == "research_and_development":
+                            # 过滤掉 None 值并求和
+                            field_values = ttm_income[mapped_item].apply(
+                                lambda x: float(x) if x not in [None, '', 'None'] else 0.0
+                            )
+                            value = field_values.sum()
+                        else:
+                            value = ttm_income[mapped_item].astype(float).sum()
                         found = True
                     except Exception:
-                        pass
+                        if item == "research_and_development":
+                            # 如果研发支出计算失败，设为0（很多公司没有研发支出）
+                            value = 0.0
+                            found = True
                 elif mapped_item in ttm_cash.columns:
                     try:
                         value = ttm_cash[mapped_item].astype(float).sum()
@@ -1111,12 +1135,44 @@ def _calculate_ttm_line_items(ticker: str, line_items: list, limit: int, income_
             # 分红累计
             elif item == "dividends_and_other_cash_distributions":
                 try:
-                    if "dividendPayout" in ttm_cash.columns:
-                        v = ttm_cash["dividendPayout"].astype(float).sum()
-                        value = v
+                    dividends_total = 0
+                    div_found = False
+                    
+                    # 尝试多个可能的分红字段名
+                    dividend_fields = [
+                        "dividendPayout", 
+                        "dividendPayoutCommonStock",
+                        "dividendsPaid",
+                        "paymentsOfDividends", 
+                        "cashDividendsPaid"
+                    ]
+                    
+                    for field in dividend_fields:
+                        if field in ttm_cash.columns:
+                            try:
+                                # 过滤掉 None 值并求和
+                                field_values = ttm_cash[field].apply(
+                                    lambda x: abs(float(x)) if x not in [None, '', 'None'] else 0
+                                )
+                                if field_values.sum() > 0:
+                                    dividends_total = field_values.sum()
+                                    div_found = True
+                                    break
+                            except Exception:
+                                continue
+                    
+                    if div_found:
+                        value = dividends_total
                         found = True
-                except Exception:
-                    pass
+                    else:
+                        # 如果没有找到分红数据，设为0（公司可能不支付股息）
+                        value = 0.0
+                        found = True
+                        
+                except Exception as e:
+                    # 如果计算失败，设为0而不是None
+                    value = 0.0
+                    found = True
             # 股权发行/回购净额 TTM
             elif item == "issuance_or_purchase_of_equity_shares":
                 try:
