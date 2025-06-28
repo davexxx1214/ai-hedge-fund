@@ -553,21 +553,73 @@ def search_line_items(ticker: str, line_items: list, end_date: str = None, perio
 
     # TTM 特殊处理
     if period == "ttm":
-        # 直接读取 quarterly 数据
-        check_rate_limit()
-        income_stmt_q, _ = fd.get_income_statement_quarterly(symbol=ticker)
-        check_rate_limit()
-        balance_sheet_q, _ = fd.get_balance_sheet_quarterly(symbol=ticker)
-        check_rate_limit()
-        cash_flow_q, _ = fd.get_cash_flow_quarterly(symbol=ticker)
-        overview = _get_overview_from_cache_or_api(ticker)
+        # 检查是否有缓存的季度数据
+        if check_financial_cache_exists(ticker):
+            print(f"发现 {ticker} 的当前日期财务缓存，从数据库获取TTM数据")
+            try:
+                # 从数据库获取季度数据
+                income_stmt_q_data = db.get_income_statement_quarterly(ticker)
+                balance_sheet_q_data = db.get_balance_sheet_quarterly(ticker)
+                cash_flow_q_data = db.get_cash_flow_quarterly(ticker)
+                
+                if income_stmt_q_data:
+                    # 转换为DataFrame
+                    income_stmt_q = pd.DataFrame(income_stmt_q_data)
+                    balance_sheet_q = pd.DataFrame(balance_sheet_q_data) if balance_sheet_q_data else pd.DataFrame()
+                    cash_flow_q = pd.DataFrame(cash_flow_q_data) if cash_flow_q_data else pd.DataFrame()
+                    
+                    # 获取公司概览数据
+                    overview = _get_overview_from_cache_or_api(ticker)
+                    
+                    # 只保留最近 4*limit 个季度
+                    income_stmt_q = income_stmt_q.head(4*limit) if len(income_stmt_q) > 0 else pd.DataFrame()
+                    balance_sheet_q = balance_sheet_q.head(4*limit) if len(balance_sheet_q) > 0 else pd.DataFrame()
+                    cash_flow_q = cash_flow_q.head(4*limit) if len(cash_flow_q) > 0 else pd.DataFrame()
+                    
+                    return _calculate_ttm_line_items(ticker, line_items, limit, income_stmt_q, balance_sheet_q, cash_flow_q, overview)
+                else:
+                    print(f"数据库中没有 {ticker} 的季度财务数据，将调用API获取")
+            except Exception as e:
+                print(f"从数据库获取TTM数据失败: {e}，将调用API获取")
+        
+        # 如果没有缓存或从缓存获取失败，则调用API
+        print(f"从API获取 {ticker} 的季度数据进行TTM计算")
+        try:
+            # 直接读取 quarterly 数据
+            check_rate_limit()
+            income_stmt_q, _ = fd.get_income_statement_quarterly(symbol=ticker)
+            check_rate_limit()
+            balance_sheet_q, _ = fd.get_balance_sheet_quarterly(symbol=ticker)
+            check_rate_limit()
+            cash_flow_q, _ = fd.get_cash_flow_quarterly(symbol=ticker)
+            overview = _get_overview_from_cache_or_api(ticker)
 
-        # 只保留最近 4*limit 个季度
-        income_stmt_q = income_stmt_q.head(4*limit) if isinstance(income_stmt_q, pd.DataFrame) else pd.DataFrame()
-        balance_sheet_q = balance_sheet_q.head(4*limit) if isinstance(balance_sheet_q, pd.DataFrame) else pd.DataFrame()
-        cash_flow_q = cash_flow_q.head(4*limit) if isinstance(cash_flow_q, pd.DataFrame) else pd.DataFrame()
+            # 保存到数据库和缓存（如果数据有效）
+            if isinstance(income_stmt_q, pd.DataFrame) and len(income_stmt_q.index) > 0:
+                income_stmt_q_dict = income_stmt_q.to_dict('records')
+                db_cache.set_income_statement_quarterly(ticker, income_stmt_q_dict)
+                save_to_file_cache('income_statement_quarterly', ticker, income_stmt_q_dict, cache_params)
+            
+            if isinstance(balance_sheet_q, pd.DataFrame) and len(balance_sheet_q.index) > 0:
+                balance_sheet_q_dict = balance_sheet_q.to_dict('records')
+                db_cache.set_balance_sheet_quarterly(ticker, balance_sheet_q_dict)
+                save_to_file_cache('balance_sheet_quarterly', ticker, balance_sheet_q_dict, cache_params)
+            
+            if isinstance(cash_flow_q, pd.DataFrame) and len(cash_flow_q.index) > 0:
+                cash_flow_q_dict = cash_flow_q.to_dict('records')
+                db_cache.set_cash_flow_quarterly(ticker, cash_flow_q_dict)
+                save_to_file_cache('cash_flow_quarterly', ticker, cash_flow_q_dict, cache_params)
 
-        return _calculate_ttm_line_items(ticker, line_items, limit, income_stmt_q, balance_sheet_q, cash_flow_q, overview)
+            # 只保留最近 4*limit 个季度
+            income_stmt_q = income_stmt_q.head(4*limit) if isinstance(income_stmt_q, pd.DataFrame) else pd.DataFrame()
+            balance_sheet_q = balance_sheet_q.head(4*limit) if isinstance(balance_sheet_q, pd.DataFrame) else pd.DataFrame()
+            cash_flow_q = cash_flow_q.head(4*limit) if isinstance(cash_flow_q, pd.DataFrame) else pd.DataFrame()
+
+            return _calculate_ttm_line_items(ticker, line_items, limit, income_stmt_q, balance_sheet_q, cash_flow_q, overview)
+            
+        except Exception as e:
+            print(f"从API获取TTM数据失败: {e}")
+            return []
 
     # 检查当前日期的财务缓存是否存在
     if check_financial_cache_exists(ticker):
@@ -1075,8 +1127,8 @@ def _calculate_ttm_line_items(ticker: str, line_items: list, limit: int, income_
         end = start + 4
         ttm_income = income_stmt_q.iloc[start:end] if len(income_stmt_q) >= end else income_stmt_q.iloc[start:]
         ttm_cash = cash_flow_q.iloc[start:end] if len(cash_flow_q) >= end else cash_flow_q.iloc[start:]
-        # 资产负债表类用最新一期
-        ttm_balance = balance_sheet_q.iloc[start] if len(balance_sheet_q) > start else None
+        # 资产负债表类始终用最新一期（不应随TTM周期偏移）
+        ttm_balance = balance_sheet_q.iloc[0] if len(balance_sheet_q) > 0 else None
         # 取最新一期的报告期
         if len(ttm_income) > 0 and "fiscalDateEnding" in ttm_income.columns:
             data["report_period"] = ttm_income["fiscalDateEnding"].iloc[0]
