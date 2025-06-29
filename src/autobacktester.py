@@ -49,6 +49,10 @@ class EqualWeightBacktester:
             "cash": 0.0,  # 全仓投资后剩余现金
             "positions": {ticker: {"shares": 0, "cost_basis": 0.0} for ticker in tickers},
         }
+        
+        # 添加本地数据缓存，避免重复查询数据库
+        self.price_cache = {}  # {ticker: {date: price}}
+        self.data_fetched = False  # 标记是否已经预取数据
 
     def execute_equal_weight_purchase(self, prices):
         """
@@ -89,8 +93,35 @@ class EqualWeightBacktester:
 
         return total_value
 
+    def get_cached_price(self, ticker: str, date: str) -> float:
+        """
+        从本地缓存获取指定日期的股票价格
+        
+        :param ticker: 股票代码
+        :param date: 日期字符串 (YYYY-MM-DD)
+        :return: 收盘价，如果没有找到则返回None
+        """
+        if ticker not in self.price_cache:
+            return None
+        
+        # 如果指定日期没有数据，尝试获取最近的前一个交易日价格
+        if date in self.price_cache[ticker]:
+            return self.price_cache[ticker][date]
+        
+        # 获取所有可用日期并排序
+        available_dates = sorted([d for d in self.price_cache[ticker].keys() if d <= date])
+        if available_dates:
+            latest_available_date = available_dates[-1]
+            return self.price_cache[ticker][latest_available_date]
+        
+        return None
+
     def prefetch_data(self):
-        """预取回测期间所需的价格数据"""
+        """预取回测期间所需的价格数据并缓存到本地"""
+        if self.data_fetched:
+            print("数据已经预取，跳过重复获取。")
+            return
+            
         print("\n预取价格数据...")
 
         # 获取稍微宽一点的日期范围确保有数据
@@ -102,9 +133,20 @@ class EqualWeightBacktester:
         extended_end = (end_date_dt + timedelta(days=10)).strftime("%Y-%m-%d")
 
         for ticker in self.tickers:
+            print(f"  预取 {ticker} 的价格数据...")
             # 获取价格数据
-            get_prices(ticker, extended_start, extended_end)
+            prices = get_prices(ticker, extended_start, extended_end)
+            
+            # 缓存到本地字典
+            self.price_cache[ticker] = {}
+            for price_record in prices:
+                date = price_record['time']
+                close_price = float(price_record['close'])
+                self.price_cache[ticker][date] = close_price
+            
+            print(f"    已缓存 {len(prices)} 条 {ticker} 价格记录")
 
+        self.data_fetched = True
         print("数据预取完成。")
 
     def run_backtest(self):
@@ -125,19 +167,12 @@ class EqualWeightBacktester:
             missing_data = False
 
             for ticker in self.tickers:
-                try:
-                    # 获取开始日期附近的价格数据
-                    start_date_range_start = (datetime.strptime(self.start_date, "%Y-%m-%d") - timedelta(days=5)).strftime("%Y-%m-%d")
-                    price_data = get_price_data(ticker, start_date_range_start, self.start_date)
-                    if price_data.empty:
-                        print(f"警告: {ticker} 在 {self.start_date} 没有价格数据")
-                        missing_data = True
-                        break
-                    start_prices[ticker] = price_data.iloc[-1]["close"]
-                except Exception as e:
-                    print(f"获取 {ticker} 在 {self.start_date} 的价格时出错: {e}")
+                price = self.get_cached_price(ticker, self.start_date)
+                if price is None:
+                    print(f"警告: {ticker} 在 {self.start_date} 附近没有价格数据")
                     missing_data = True
                     break
+                start_prices[ticker] = price
 
             if missing_data:
                 print(f"由于缺少价格数据，跳过 {self.start_date}")
@@ -172,49 +207,27 @@ class EqualWeightBacktester:
             
             try:
                 current_prices = {}
-                missing_data = False
+                missing_count = 0
 
                 for ticker in self.tickers:
-                    try:
-                        # 获取当前日期附近的价格数据
-                        date_range_start = (current_date - timedelta(days=5)).strftime("%Y-%m-%d")
-                        price_data = get_price_data(ticker, date_range_start, current_date_str)
-                        if price_data.empty:
-                            # 如果当天没有数据，使用前一个有效价格
-                            continue
-                        current_prices[ticker] = price_data.iloc[-1]["close"]
-                    except Exception as e:
-                        # 如果获取价格失败，跳过这个股票
-                        continue
+                    price = self.get_cached_price(ticker, current_date_str)
+                    if price is not None:
+                        current_prices[ticker] = price
+                    else:
+                        missing_count += 1
 
-                # 如果我们有足够的价格数据，计算投资组合价值
-                if len(current_prices) == len(self.tickers):
+                # 如果我们有足够的价格数据（至少80%的股票有数据），计算投资组合价值
+                if missing_count <= len(self.tickers) * 0.2:  # 允许最多20%的股票缺失数据
+                    # 对于缺失的股票价格，使用开始日期的价格作为备用
+                    for ticker in self.tickers:
+                        if ticker not in current_prices:
+                            current_prices[ticker] = start_prices.get(ticker, 0)
+                    
                     daily_portfolio_value = self.calculate_portfolio_value(current_prices)
                     self.portfolio_values.append({
                         "Date": current_date,
                         "Portfolio Value": daily_portfolio_value
                     })
-                elif len(current_prices) > 0:
-                    # 如果只有部分股票有价格数据，使用可用的价格和前一日的价格
-                    # 获取前一日的价格作为备用
-                    prev_date = (current_date - timedelta(days=1)).strftime("%Y-%m-%d")
-                    for ticker in self.tickers:
-                        if ticker not in current_prices:
-                            try:
-                                prev_range_start = (current_date - timedelta(days=10)).strftime("%Y-%m-%d")
-                                prev_price_data = get_price_data(ticker, prev_range_start, prev_date)
-                                if not prev_price_data.empty:
-                                    current_prices[ticker] = prev_price_data.iloc[-1]["close"]
-                            except:
-                                # 如果还是没有数据，使用开始日期的价格
-                                current_prices[ticker] = start_prices.get(ticker, 0)
-                    
-                    if len(current_prices) == len(self.tickers):
-                        daily_portfolio_value = self.calculate_portfolio_value(current_prices)
-                        self.portfolio_values.append({
-                            "Date": current_date,
-                            "Portfolio Value": daily_portfolio_value
-                        })
 
             except Exception as e:
                 # 如果当天出错，跳过
@@ -226,44 +239,25 @@ class EqualWeightBacktester:
             missing_data = False
 
             for ticker in self.tickers:
-                try:
-                    end_date_range_start = (datetime.strptime(self.end_date, "%Y-%m-%d") - timedelta(days=5)).strftime("%Y-%m-%d")
-                    price_data = get_price_data(ticker, end_date_range_start, self.end_date)
-                    if price_data.empty:
-                        print(f"警告: {ticker} 在 {self.end_date} 没有价格数据")
-                        # 使用最后可用的价格
-                        if self.portfolio_values:
-                            # 使用最近一次计算的价格
-                            end_prices[ticker] = start_prices[ticker]  # 备用方案
-                        else:
-                            missing_data = True
-                            break
-                    else:
-                        end_prices[ticker] = price_data.iloc[-1]["close"]
-                except Exception as e:
-                    print(f"获取 {ticker} 在 {self.end_date} 的价格时出错: {e}")
-                    end_prices[ticker] = start_prices[ticker]  # 使用开始价格作为备用
+                price = self.get_cached_price(ticker, self.end_date)
+                if price is not None:
+                    end_prices[ticker] = price
+                else:
+                    print(f"警告: {ticker} 在 {self.end_date} 附近没有价格数据，使用开始价格")
+                    end_prices[ticker] = start_prices.get(ticker, 0)
 
             # 计算最终投资组合价值
-            if not missing_data:
-                final_portfolio_value = self.calculate_portfolio_value(end_prices)
-                
-                # 检查是否已经有结束日期的记录
-                end_date_dt = datetime.strptime(self.end_date, "%Y-%m-%d")
-                has_end_date = any(record["Date"] == end_date_dt for record in self.portfolio_values)
-                
-                if not has_end_date:
-                    self.portfolio_values.append({
-                        "Date": end_date_dt,
-                        "Portfolio Value": final_portfolio_value
-                    })
-            else:
-                # 如果缺少数据，使用最后一个可用的投资组合价值
-                if self.portfolio_values:
-                    final_portfolio_value = self.portfolio_values[-1]["Portfolio Value"]
-                    end_prices = start_prices  # 使用开始价格作为备用
-                else:
-                    return {}
+            final_portfolio_value = self.calculate_portfolio_value(end_prices)
+            
+            # 检查是否已经有结束日期的记录
+            end_date_dt = datetime.strptime(self.end_date, "%Y-%m-%d")
+            has_end_date = any(record["Date"] == end_date_dt for record in self.portfolio_values)
+            
+            if not has_end_date:
+                self.portfolio_values.append({
+                    "Date": end_date_dt,
+                    "Portfolio Value": final_portfolio_value
+                })
 
         except Exception as e:
             print(f"获取 {self.end_date} 价格时出错: {e}")
